@@ -1,5 +1,5 @@
 import 'package:aral_project/Admin/Dashboard/metric_card.dart';
-import 'package:aral_project/Admin/Dashboard/recent_transaction_section.dart';
+import 'package:aral_project/Admin/components/transactions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -15,7 +15,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget build(BuildContext context) {
     String formattedDate = DateFormat('EEE, d MMM y').format(DateTime.now());
 
-    // Pull text theme shortcuts for cleaner code
     final textTheme = Theme.of(context).textTheme;
 
     return SingleChildScrollView(
@@ -25,16 +24,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
         children: [
           Text(
             'Welcome, Admin',
+
             style: textTheme.displaySmall?.copyWith(
               fontWeight: FontWeight.bold,
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            formattedDate,
-            style:
-                textTheme.bodyMedium, // Automatically uses textColorSecondary
-          ),
+          Text(formattedDate, style: textTheme.bodyMedium),
           const SizedBox(height: 20),
           GridView.count(
             crossAxisCount: 2,
@@ -62,7 +58,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ],
           ),
           const SizedBox(height: 24),
-          const RecentTransactionsSection(),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Recent transactions'),
+              TextButton(onPressed: () {}, child: Text('See all')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const TransactionsCard(),
         ],
       ),
     );
