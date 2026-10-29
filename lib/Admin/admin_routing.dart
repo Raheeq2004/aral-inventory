@@ -1,0 +1,63 @@
+import 'package:aral_project/Admin/Dashboard/admin_dashboard.dart';
+import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
+import 'package:flutter/material.dart';
+
+class AdminRouting extends StatefulWidget {
+  const AdminRouting({super.key});
+
+  @override
+  State<AdminRouting> createState() => _AdminRoutingState();
+}
+
+class _AdminRoutingState extends State<AdminRouting> {
+  int _currentIndex = 0;
+  final List<Widget> _screens = [const AdminDashboard()];
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        centerTitle: false,
+        title: const Text('Dashboard'),
+        actions: [
+          const ConnectivityBadge(),
+          const SizedBox(width: 8),
+          IconButton(onPressed: () {}, icon: const Icon(Icons.logout_rounded)),
+          SizedBox(width: 10),
+        ],
+      ),
+      body: _screens[_currentIndex],
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: const Color(0xFFF1F5F9),
+        selectedItemColor: const Color(
+          0xFF78350F,
+        ), // Deep warm brown for selected item/pill
+        unselectedItemColor: const Color(
+          0xFF475569,
+        ), // Slate gray for unselected items
+        selectedIconTheme: const IconThemeData(size: 26),
+        unselectedIconTheme: const IconThemeData(size: 24),
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.grid_view_rounded),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.list_alt_rounded),
+            label: 'Transactions',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.bar_chart_rounded),
+            label: 'Reports',
+          ),
+        ],
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+      ),
+    );
+  }
+}
