@@ -1,6 +1,7 @@
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 class TransactionsCard extends StatelessWidget {
@@ -40,11 +41,34 @@ class TransactionsCard extends StatelessWidget {
             return Card(
               margin: const EdgeInsets.symmetric(vertical: 4),
               child: ListTile(
-                title: Text(tx.itemName),
-                subtitle: Text("Type: ${tx.type} | Qty: ${tx.quantity}"),
+                title: Text(tx.itemCode),
+                leading: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: tx.direction == "IN"
+                        ? Colors.green.withValues(alpha: 0.15)
+                        : Theme.of(context).colorScheme.error
+                              .withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: tx.direction == 'IN'
+                      ? Icon(Icons.arrow_downward)
+                      : Icon(Icons.arrow_upward),
+                ),
+                subtitle: Text(
+                  "Location =: ${tx.locationCode}\n${tx.workerId} * ${DateFormat('d MMM, HH:mm').format(tx.timestamp.toLocal())} ",
+                ),
                 trailing: Text(
-                  tx.timestamp.toLocal().toString().split('.')[0],
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  tx.direction == 'IN' ? "+${tx.quantity}" : "-${tx.quantity}",
+                  style: TextStyle(
+                    fontSize: Theme.of(context)
+                        .textTheme
+                        .displaySmall
+                        ?.fontSize,
+                    color: tx.direction == 'IN'
+                        ? Colors.green.shade700
+                        : Theme.of(context).colorScheme.error,
+                  ),
                 ),
               ),
             );

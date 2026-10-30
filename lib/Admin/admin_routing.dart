@@ -22,13 +22,18 @@ class _AdminRoutingState extends State<AdminRouting> {
   }
 
   int _currentIndex = 0;
-  final List<Widget> _screens = [const AdminDashboard()];
+  final List<String> _titles = ['Dashboard', 'Transactions', 'Reports'];
+  final List<Widget> _screens = [
+    const AdminDashboard(),
+    const Center(child: Text('Transactions Screen')),
+    const Center(child: Text('Reports Screen')),
+  ];
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
-        title: const Text('Dashboard'),
+        title: Text(_titles[_currentIndex]),
         actions: [
           const ConnectivityBadge(),
           const SizedBox(width: 8),
