@@ -1,23 +1,3 @@
-Claude
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Main · DART
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Landing/landing_page.dart';
 import 'package:aral_project/Theme/theme.dart';
@@ -57,4 +37,3 @@ class MyApp extends StatelessWidget {
   }
 }
  
-Claude finished the response

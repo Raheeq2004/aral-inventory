@@ -1,23 +1,3 @@
-Claude
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-Landing page · DART
 // =====================================================================
 // ARAL Inventory – Landing page (Figma screen "W0 · Landing")
 // =====================================================================
@@ -526,4 +506,3 @@ class _QrCluster extends StatelessWidget {
   }
 }
  
-Claude finished the response
