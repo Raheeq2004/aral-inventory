@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "217184495012",
+    "firebase_url": "https://aral-project-9ba9f-default-rtdb.firebaseio.com",
+    "project_id": "aral-project-9ba9f",
+    "storage_bucket": "aral-project-9ba9f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:217184495012:android:27091dac20e012ad680d31",
+        "android_client_info": {
+          "package_name": "com.example.aral_project"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBVtuqmKfqc1FQgnuFKynlCmiEo7tI7D8U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

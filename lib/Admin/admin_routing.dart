@@ -1,6 +1,9 @@
-import 'package:aral_project/Admin/Dashboard/admin_dashboard.dart';
+import 'package:aral_project/Admin/DashboardPage/admin_dashboard.dart';
+import 'package:aral_project/Admin/TransactionPage/all_transactions.dart';
+import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class AdminRouting extends StatefulWidget {
   const AdminRouting({super.key});
@@ -10,14 +13,28 @@ class AdminRouting extends StatefulWidget {
 }
 
 class _AdminRoutingState extends State<AdminRouting> {
+  @override
+  void initState() {
+    super.initState();
+    // Safely fetch transactions after the first frame is rendered
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<TransactionData>(context, listen: false).getTransactions();
+    });
+  }
+
   int _currentIndex = 0;
-  final List<Widget> _screens = [const AdminDashboard()];
+  final List<String> _titles = ['Dashboard', 'Transactions', 'Reports'];
+  final List<Widget> _screens = [
+    const AdminDashboard(),
+    const AllTransactionsPage(),
+    const Center(child: Text('Reports Screen')),
+  ];
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
-        title: const Text('Dashboard'),
+        title: Text(_titles[_currentIndex]),
         actions: [
           const ConnectivityBadge(),
           const SizedBox(width: 8),
