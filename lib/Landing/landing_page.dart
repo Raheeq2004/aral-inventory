@@ -41,13 +41,13 @@ import 'package:aral_project/Theme/theme.dart';
 // ---------------------------------------------------------------------
 const kLandingBackground = Color(0xFFF6F1EA); // warm off-white page background
 const kTextSecondary = Color(0xFF4A5260);     // grey for the slogan + footer
-const kSand = Color(0xFFF3E3CC);              // logo icon color + sand shapes
-const kBronze = Color(0xFF9A6B2F);            // spinner color
-const kBronzeLight = Color(0xFFE6D3B5);       // "tape" bars + boxes
+const kSand = Color(0xFFFCE1D0);              // logo icon color + peach shapes (theme: secondaryContainer)
+const kBronze = Color(0xFFC2531C);            // spinner color (theme: burnt orange accent)
+const kBronzeLight = Color(0xFFF6D3BD);       // "tape" bars + boxes (soft peach, Figma decorBronze)
 const kBlueLight = Color(0xFFD6E3F7);         // big circle + small bar
 const kBlueLighter = Color(0xFFDCE7F5);       // rounded square
 const kQrBlue = Color(0xFFC9D8EE);            // the small QR piece
-const kPin = Color(0xFFE2C59E);               // the location pin icon
+const kPin = Color(0xFFE8976A);               // the location pin icon (Figma decorPin)
  
 // =====================================================================
 // 1) THE PAGE ITSELF
@@ -505,4 +505,3 @@ class _QrCluster extends StatelessWidget {
     );
   }
 }
- 
