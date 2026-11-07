@@ -1,139 +1,136 @@
 // =====================================================================
-// ARAL Inventory – Landing page (Figma screen "W0 · Landing")
+// ARAL Inventory – Splash screen (Figma screen "W0 · Splash")
 // =====================================================================
 //
 // What this screen does:
 //   1. Shows floating decorative shapes in the background (animated).
-//   2. Shows the logo, the app name and the slogan in the middle.
-//   3. Shows a "Sign in" button at the bottom.
-//      (If the user is already logged in, it shows a spinner + "Signing you in…"
-//       instead – Figma screen "W0b".)
+//   2. Shows the sunrise-orange logo, the app name and the slogan.
+//   3. Shows a spinner + "Preparing your workspace…".
+//   4. After ~3 seconds it moves BY ITSELF to the next screen
+//      (no button). Later, when Login exists, it will decide:
+//        not logged in → Login, worker → Scan, admin → Dashboard.
 //
-// All positions and sizes come from the Figma design (a 360 x 800 screen)
-// and are scaled to the real phone size, so it looks the same on every phone.
+// All positions/sizes come from the Figma design (a 360 x 800 screen)
+// and are scaled to the real phone size, so it looks the same everywhere.
+//
+// (The file/class are still called landing_page / LandingPage so
+//  main.dart doesn't need to change.)
 // =====================================================================
- 
-// ---------------------------------------------------------------------
-// IMPORTS: bring code from other files / packages into this file.
-// ---------------------------------------------------------------------
- 
-// 'dart:math' is Dart's built-in math library. We need sin() and pi for the
-// floating movement. "as math" gives it a short name, so we write math.sin().
+
+// 'dart:math' = Dart's math library (sin, pi) for the floating wave.
+// "as math" gives it a short prefix: math.sin(), math.pi
 import 'dart:math' as math;
- 
-// Flutter's Material widgets (Scaffold, Text, Container, FilledButton…).
+
 import 'package:flutter/material.dart';
- 
-// Joud's AdminRouting screen: where "Sign in" goes FOR NOW
-// (until we build the Login page).
+
+// Where we go after the splash (for now, until the Login page exists).
 import 'package:aral_project/Admin/admin_routing.dart';
- 
-// Joud's theme file. We use AppTheme.primaryColor (deep navy) so our page
-// matches the rest of the app. "package:aral_project/..." = a path starting
-// from the lib/ folder of our project (aral_project is the name in pubspec.yaml).
+
+// Joud's theme: we reuse the navy + burnt orange colors from there.
 import 'package:aral_project/Theme/theme.dart';
- 
+
 // ---------------------------------------------------------------------
-// COLORS used only on this page (the soft decoration colors).
-// `const` = the value is fixed and known BEFORE the app runs,
-// so Dart creates it once and reuses it (faster, less memory).
-// Color(0xFFF6F1EA): 0xFF = fully opaque, F6F1EA = the hex color.
+// Colors used only on this page (soft decoration colors).
+// `const` = fixed value known before the app runs → created once, reused.
 // ---------------------------------------------------------------------
-const kLandingBackground = Color(0xFFF6F1EA); // warm off-white page background
-const kTextSecondary = Color(0xFF4A5260);     // grey for the slogan + footer
-const kSand = Color(0xFFFCE1D0);              // logo icon color + peach shapes (theme: secondaryContainer)
-const kBronze = Color(0xFFC2531C);            // spinner color (theme: burnt orange accent)
-const kBronzeLight = Color(0xFFF6D3BD);       // "tape" bars + boxes (soft peach, Figma decorBronze)
+const kLandingBackground = Color(0xFFF6F1EA); // warm off-white background
+const kTextSecondary = Color(0xFF4A5260);     // grey for slogan + status text
+const kPeach = Color(0xFFFCE1D0);             // peach boxes/circles (theme secondaryContainer)
+const kPeachDeep = Color(0xFFF6D3BD);         // "tape" bars + boxes (Figma decorBronze)
 const kBlueLight = Color(0xFFD6E3F7);         // big circle + small bar
-const kBlueLighter = Color(0xFFDCE7F5);       // rounded square
+const kBlueLighter = Color(0xFFDCE7F5);       // rounded squares
 const kQrBlue = Color(0xFFC9D8EE);            // the small QR piece
-const kPin = Color(0xFFE8976A);               // the location pin icon (Figma decorPin)
- 
+const kPin = Color(0xFFE8976A);               // the location pin (Figma decorPin)
+
+// Logo gradient colors (sunrise orange: light → burnt orange → deep)
+const kLogoLight = Color(0xFFF7A35C);
+const kLogoMid = Color(0xFFE06A2B);
+const kLogoDeep = Color(0xFFB0461A);
+
+// How long the splash stays on screen before moving on.
+// 3 s = enough time to see the logo, the shapes floating and the spinner.
+const kSplashDuration = Duration(seconds: 3);
+
 // =====================================================================
-// 1) THE PAGE ITSELF
+// 1) THE SPLASH PAGE
 // =====================================================================
- 
-/// StatelessWidget: this page has NO data that changes by itself.
-/// (The animation lives in a separate widget below, which IS stateful.)
-class LandingPage extends StatelessWidget {
-  // Constructor.
-  // `super.key`        → passes the key up to the parent class (StatelessWidget).
-  // `this.isCheckingLogin = false` → a NAMED, OPTIONAL parameter with a default
-  //                      value. If nobody passes it, it is false.
-  const LandingPage({super.key, this.isCheckingLogin = false});
- 
-  /// true  → show the spinner + "Signing you in…" (user already logged in, W0b)
-  /// false → show the "Sign in" button (W0)
-  /// `final` = set once in the constructor, never changes after.
-  final bool isCheckingLogin;
- 
-  // @override = we REPLACE the build() method inherited from StatelessWidget.
-  // build() describes what the screen looks like. Flutter calls it whenever
-  // it needs to draw this widget.
-  // `context` = this widget's place in the widget tree (used for Theme.of,
-  // Navigator…).
+
+/// STATEFUL now (before it was Stateless), because the page must DO
+/// something by itself after it appears: wait 3 seconds, then navigate.
+/// Things that happen over time / on start belong in a State class.
+class LandingPage extends StatefulWidget {
+  const LandingPage({super.key});
+
+  @override
+  State<LandingPage> createState() => _LandingPageState();
+}
+
+class _LandingPageState extends State<LandingPage> {
+  // initState() runs ONCE, when the page is first created.
+  // Perfect place to start the timer.
+  // Rule: super.initState() FIRST.
+  @override
+  void initState() {
+    super.initState();
+
+    // Future.delayed = "run this function after this much time".
+    // It returns a Future (a value that arrives later); we don't need
+    // to await it, we just let it call _goNext when the time is up (3 s).
+    Future.delayed(kSplashDuration, _goNext);
+  }
+
+  /// Decides where to go after the splash.
+  void _goNext() {
+    // `mounted` = is this page still on screen?
+    // If the user closed the app during the 3 seconds, the page is gone,
+    // and using its context would crash → so we check first.
+    if (!mounted) return;
+
+    // TODO (when Firebase Auth + Login page exist):
+    //   final user = FirebaseAuth.instance.currentUser;
+    //   if (user == null)            → go to LoginPage
+    //   else read users/<uid>/role:
+    //        role == 'admin'         → go to AdminRouting
+    //        role == 'worker'        → go to the worker Scan page
+
+    // pushReplacement = REPLACE the splash with the next screen, so the
+    // phone's back button can't return to the splash.
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const AdminRouting()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Save the text styles in a variable so we don't repeat Theme.of(context).
-    // Theme.of(context) looks UP the tree and finds the theme Joud set in
-    // MaterialApp (AppTheme.lightTheme).
+    // Text styles from the theme (looks UP the tree to MaterialApp's theme).
     final textTheme = Theme.of(context).textTheme;
- 
-    // Scaffold = the basic page structure (background, body, app bar…).
-    // We don't use an AppBar here: the landing page is full-screen.
+
     return Scaffold(
       backgroundColor: kLandingBackground,
- 
-      // Stack = puts widgets ON TOP of each other (like layers).
-      //   Layer 1 (bottom): the animated shapes
-      //   Layer 2 (top):    the logo, texts and button
+
+      // Stack = layers on top of each other:
+      //   layer 1 (bottom): animated shapes
+      //   layer 2 (top):    logo, texts, spinner
       body: Stack(
         children: [
-          // ---- Layer 1: background ----
-          // Positioned.fill = stretch this child to cover the whole Stack.
+          // Positioned.fill = stretch to cover the whole screen.
           const Positioned.fill(child: FloatingShapesBackground()),
- 
-          // ---- Layer 2: content ----
-          // SafeArea = keeps the content away from the phone's status bar
-          // (clock, battery) and the bottom gesture bar.
+
+          // SafeArea = keep content away from the status bar / gesture bar.
           SafeArea(
-            child: Padding(
-              // EdgeInsets.fromLTRB = padding Left, Top, Right, Bottom.
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
- 
-              // Column = puts its children vertically, one under the other.
+            child: Center(
               child: Column(
                 children: [
-                  // Spacer = flexible empty space. flex: 3 above and flex: 4
-                  // below means the free space is split 3 : 4, which places
-                  // the logo a little ABOVE the center (like the Figma design).
+                  // Spacer = flexible empty space. 3 above : 4 below puts the
+                  // logo a little ABOVE the center, like the Figma design.
                   const Spacer(flex: 3),
- 
-                  // ---- The logo box ----
-                  // Container + BoxDecoration = a box with color and rounded corners.
-                  // (color goes INSIDE BoxDecoration, never on the Container too.)
-                  Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      color: AppTheme.primaryColor, // navy from Joud's theme
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                    child: const Icon(
-                      Icons.qr_code_scanner,
-                      size: 52,
-                      color: kSand,
-                    ),
-                  ),
- 
-                  // SizedBox with only a height = a fixed vertical gap.
-                  const SizedBox(height: 16),
- 
-                  // ---- App name ----
-                  // copyWith = keep the theme's headlineMedium style but change
-                  // only the color and the weight.
-                  // `?.` = "only call copyWith if headlineMedium is not null"
-                  // (null safety).
+
+                  const _SunriseLogo(),
+                  const SizedBox(height: 20),
+
+                  // App name. copyWith = keep the theme style, change a few things.
+                  // `?.` = only call copyWith if the style isn't null (null safety).
                   Text(
                     'ARAL Inventory',
                     style: textTheme.headlineMedium?.copyWith(
@@ -142,52 +139,24 @@ class LandingPage extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 6),
- 
-                  // ---- Slogan ----
                   Text(
                     'Scan. Store. Track.',
                     style: textTheme.bodyLarge?.copyWith(color: kTextSecondary),
                   ),
- 
+
+                  const SizedBox(height: 32),
+
+                  // ---- Spinner + status text (replaces the Sign in button) ----
+                  // SizedBox fixes the spinner's size (28 x 28).
+                  // Our own slower spinner (see _SlowSpinner below).
+                  const _SlowSpinner(),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Preparing your workspace…',
+                    style: TextStyle(fontSize: 13, color: kTextSecondary),
+                  ),
+
                   const Spacer(flex: 4),
- 
-                  // ---- Bottom part: spinner OR button ----
-                  // "collection if" inside a children list:
-                  //   if (condition) ...[widgets] else ...[other widgets]
-                  // `...` (spread) = add SEVERAL widgets under one condition.
-                  if (isCheckingLogin) ...[
-                    // Auto sign-in (W0b): a spinning loader + a short message.
-                    const CircularProgressIndicator(color: kBronze),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Signing you in…',
-                      style: TextStyle(color: kTextSecondary),
-                    ),
-                  ] else ...[
-                    // Normal case (W0): the Sign in button.
-                    // SizedBox makes the button full-width and 52 px tall.
-                    SizedBox(
-                      width: double.infinity, // as wide as possible
-                      height: 52,
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppTheme.primaryColor,
-                          foregroundColor: Colors.white,
-                        ),
-                        // onPressed = the function that runs when tapped.
-                        // We pass a FUNCTION (() => …), not its result,
-                        // so it runs only on tap.
-                        onPressed: () => _goToNextScreen(context),
-                        icon: const Icon(Icons.lock),
-                        label: const Text('Sign in'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'Arab Aluminum Industry Co. · v1.0',
-                      style: TextStyle(fontSize: 12, color: kTextSecondary),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -196,180 +165,268 @@ class LandingPage extends StatelessWidget {
       ),
     );
   }
- 
-  /// What happens when "Sign in" is tapped.
-  ///
-  /// NAVIGATION: screens are a STACK (like plates).
-  ///   - Navigator.push            → put a new screen ON TOP (back returns here).
-  ///   - Navigator.pushReplacement → REPLACE this screen with the new one,
-  ///     so the phone's back button does NOT come back to the landing page.
-  ///     That is what we want after signing in.
-  ///
-  /// MaterialPageRoute = one screen in the stack, with the normal slide animation.
-  /// builder: (_) => … = a function that BUILDS the new screen when needed.
-  ///   `_` = "I don't need this parameter" (it's a context we don't use).
-  ///
-  /// The name starts with `_` → PRIVATE: only usable inside this file.
-  void _goToNextScreen(BuildContext context) {
-    // TODO: when the Login page is ready, go to it instead:
-    //   Navigator.push(context,
-    //       MaterialPageRoute(builder: (_) => const LoginPage()));
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const AdminRouting()),
+}
+
+// =====================================================================
+// 1b) A SLOWER SPINNER
+// =====================================================================
+//
+// Flutter's CircularProgressIndicator spins at a FIXED speed (we can't
+// change it). So we build our own: a FIXED orange arc (value: 0.28 = 28%
+// of a circle) and we ROTATE it ourselves with an AnimationController.
+// We choose the speed: one full turn every 2.5 s (calm, not hectic).
+class _SlowSpinner extends StatefulWidget {
+  const _SlowSpinner();
+
+  @override
+  State<_SlowSpinner> createState() => _SlowSpinnerState();
+}
+
+// SingleTickerProviderStateMixin = like TickerProviderStateMixin, but for
+// exactly ONE AnimationController (lighter).
+class _SlowSpinnerState extends State<_SlowSpinner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _turn = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 2500), // one turn every 2.5 s ← bigger = slower
+  )..repeat();
+
+  @override
+  void dispose() {
+    _turn.dispose(); // always stop controllers when leaving
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // RotationTransition rotates its child using the controller's value:
+    // 0.0 → 1.0 = 0° → 360°.
+    return RotationTransition(
+      turns: _turn,
+      child: const SizedBox(
+        width: 28,
+        height: 28,
+        child: CircularProgressIndicator(
+          value: 0.28, // a fixed arc (not the built-in fast animation)
+          strokeWidth: 3,
+          strokeCap: StrokeCap.round, // rounded arc ends
+          color: AppTheme.secondaryColor, // burnt orange
+          backgroundColor: Color(0x1FC2531C), // faint orange track (12%)
+        ),
+      ),
     );
   }
 }
- 
+
 // =====================================================================
-// 2) THE DATA FOR ONE DECORATIVE SHAPE (a plain Dart class, NOT a widget)
+// 2) THE SUNRISE LOGO (gradient + shine + glow)
 // =====================================================================
- 
-/// A CLASS is a blueprint. Each shape on the screen is one OBJECT made
-/// from this blueprint, with its own position, size, color and movement.
-/// Values are in "design pixels" (the Figma screen is 360 wide, 800 tall).
+
+/// A small reusable StatelessWidget: nothing changes inside it.
+/// The leading `_` makes it PRIVATE to this file.
+class _SunriseLogo extends StatelessWidget {
+  const _SunriseLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 96,
+      height: 96,
+      // BoxDecoration = how the box looks (gradient, corners, shadow).
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+
+        // LinearGradient = smooth blend between colors along a line.
+        // begin top-left → end bottom-right: light where "the sun hits",
+        // darker at the bottom → the tile looks 3D.
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [kLogoLight, kLogoMid, kLogoDeep],
+          stops: [0.0, 0.45, 1.0], // where each color sits (0 = start, 1 = end)
+        ),
+
+        // BoxShadow = the soft warm glow UNDER the logo, so it "floats".
+        // offset moves it down; blurRadius softens it; negative spread
+        // makes it a bit smaller than the box.
+        boxShadow: [
+          BoxShadow(
+            color: kLogoDeep.withValues(alpha: 0.45),
+            offset: const Offset(0, 12),
+            blurRadius: 24,
+            spreadRadius: -8,
+          ),
+        ],
+      ),
+
+      // ClipRRect = cut everything inside to the rounded corners,
+      // so the shine doesn't stick out of the tile.
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // The "shine": a soft white oval at the top (like a reflection).
+            Positioned(
+              top: -30,
+              left: -14,
+              child: Container(
+                width: 124,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.18),
+                  shape: BoxShape.circle, // stretched circle = oval
+                  // (BoxShape.circle with width ≠ height draws an oval
+                  //  inside the box)
+                ),
+              ),
+            ),
+            // The QR icon, white on orange.
+            const Icon(Icons.qr_code_scanner, size: 52, color: Colors.white),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// =====================================================================
+// 3) THE DATA FOR ONE DECORATIVE SHAPE (plain Dart class, not a widget)
+// =====================================================================
+
+/// A CLASS is a blueprint; each shape is one OBJECT made from it.
+/// Values are in "design pixels" (Figma screen = 360 x 800).
 class ShapeSpec {
-  // Named parameters:
-  //   `required` → must be given.
-  //   `= value`  → optional, with a default.
+  // `required` = must be given; `= value` = optional with a default.
   const ShapeSpec({
     required this.left,
     required this.top,
     required this.width,
     required this.height,
     required this.color,
-    this.radius = 8,       // corner roundness
-    this.angle = 0,        // rotation in degrees
-    this.stripe = false,   // white "tape" line in the middle (box look)
+    this.radius = 8,      // corner roundness
+    this.angle = 0,       // rotation in degrees
+    this.stripe = false,  // white "tape" line in the middle (box look)
     this.isCircle = false,
-    this.child,            // optional custom content (QR piece, pin icon)
-    this.floatY = 6,       // how far it moves up/down (px)
-    this.floatX = 0,       // how far it moves left/right (px)
-    this.speed = 1.0,      // 1.0 = one full float cycle every 6 seconds
-    this.phase = 0.0,      // 0..1 start offset, so shapes don't move together
+    this.child,           // optional custom content (QR piece, pin icon)
+    this.floatY = 6,      // how far it moves up/down (px)
+    this.floatX = 0,      // how far it moves left/right (px)
+    this.speed = 1.0,     // 1.0 = one full float cycle per 6 s
+    this.phase = 0.0,     // 0..1 start offset, so shapes don't move together
+    this.opacity = 1.0,   // the new middle shapes are a bit lighter (0.85)
   });
- 
-  // `final` fields: an object's values never change after it is created.
-  final double left, top, width, height, radius, angle, floatY, floatX, speed, phase;
+
+  final double left, top, width, height, radius, angle;
+  final double floatY, floatX, speed, phase, opacity;
   final Color color;
   final bool stripe, isCircle;
- 
-  // `Widget?` = NULLABLE: it can hold a widget OR be null (no child).
-  final Widget? child;
+  final Widget? child; // `?` = nullable: a widget OR null
 }
- 
-/// The 9 shapes of the design, as a LIST of ShapeSpec objects.
-/// `<ShapeSpec>[ … ]` = a List that can only hold ShapeSpec objects.
-/// `const` = the whole list is fixed and built before the app runs.
-/// The name starts with `_` → private to this file.
+
+/// The 12 shapes of the design (9 original + 3 new middle ones).
+/// floatY = small up/down movement (calm, like the original design).
 const _shapes = <ShapeSpec>[
-  // top-left sand box with tape
-  ShapeSpec(left: 32, top: 74, width: 101, height: 72, color: kSand, angle: -14, stripe: true, floatY: 8, phase: 0.0),
-  // big blue circle (top-right)
+  // ---- top ----
+  ShapeSpec(left: 32, top: 74, width: 101, height: 72, color: kPeach, angle: -14, stripe: true, floatY: 8, phase: 0.0),
   ShapeSpec(left: 216, top: 48, width: 92, height: 92, color: kBlueLight, isCircle: true, floatY: 6, speed: 0.8, phase: 0.3),
-  // bronze bar (moves left/right a little)
-  ShapeSpec(left: 161, top: 189, width: 130, height: 20, color: kBronzeLight, radius: 10, angle: -8, floatX: 6, floatY: 3, phase: 0.6),
-  // small QR piece
+  ShapeSpec(left: 161, top: 189, width: 130, height: 20, color: kPeachDeep, radius: 10, angle: -8, floatX: 6, floatY: 3, phase: 0.6),
   ShapeSpec(left: 43, top: 224, width: 52, height: 52, color: Colors.transparent, angle: 12, floatY: 5, speed: 1.2, phase: 0.15, child: _QrCluster()),
-  // rounded blue square (half outside the right edge)
   ShapeSpec(left: 291, top: 240, width: 84, height: 84, color: kBlueLighter, radius: 17, angle: 20, floatY: 7, phase: 0.45),
-  // location pin
   ShapeSpec(left: 288, top: 154, width: 40, height: 40, color: Colors.transparent, angle: 10, floatY: 9, speed: 1.3, phase: 0.8,
       child: Icon(Icons.location_on_outlined, size: 40, color: kPin)),
-  // bottom-left bronze box with tape (half outside the left edge)
-  ShapeSpec(left: -20, top: 576, width: 112, height: 81, color: kBronzeLight, angle: 16, stripe: true, floatY: 7, speed: 0.9, phase: 0.5),
-  // small sand circle (bottom-right)
-  ShapeSpec(left: 259, top: 563, width: 63, height: 63, color: kSand, isCircle: true, floatY: 6, speed: 1.1, phase: 0.2),
-  // small blue bar (bottom)
+
+  // ---- NEW: middle (at the screen edges, never behind the logo/text) ----
+  ShapeSpec(left: 18, top: 322, width: 34, height: 34, color: kPeachDeep, isCircle: true, floatY: 5, speed: 1.1, phase: 0.35, opacity: 0.85),
+  ShapeSpec(left: 302, top: 420, width: 40, height: 40, color: kBlueLighter, radius: 10, angle: -14, floatY: 6, speed: 0.9, phase: 0.65, opacity: 0.85),
+  ShapeSpec(left: 14, top: 500, width: 64, height: 13, color: kPeachDeep, radius: 7, angle: 10, floatX: 5, floatY: 2, phase: 0.9, opacity: 0.85),
+
+  // ---- bottom ----
+  ShapeSpec(left: -20, top: 576, width: 112, height: 81, color: kPeachDeep, angle: 16, stripe: true, floatY: 7, speed: 0.9, phase: 0.5),
+  ShapeSpec(left: 259, top: 563, width: 63, height: 63, color: kPeach, isCircle: true, floatY: 6, speed: 1.1, phase: 0.2),
   ShapeSpec(left: 133, top: 621, width: 101, height: 17, color: kBlueLight, radius: 9, angle: 6, floatX: 5, floatY: 3, phase: 0.7),
 ];
- 
+
 // =====================================================================
-// 3) THE ANIMATED BACKGROUND (a StatefulWidget)
+// 4) THE ANIMATED BACKGROUND (StatefulWidget)
 // =====================================================================
- 
-/// Why STATEFUL? Because it owns AnimationControllers: objects that keep
-/// running and changing over time. A StatefulWidget is TWO classes:
-///   - this class (the widget, which is immutable), and
-///   - its State class (below), which holds the changing things.
+
+/// STATEFUL because it owns AnimationControllers (objects that keep
+/// changing over time).
 class FloatingShapesBackground extends StatefulWidget {
   const FloatingShapesBackground({super.key});
- 
-  // createState() creates the State object that Flutter keeps alive
-  // while this widget is on screen.
+
   @override
   State<FloatingShapesBackground> createState() =>
       _FloatingShapesBackgroundState();
 }
- 
-/// `with TickerProviderStateMixin` = a MIXIN (extra abilities added to a class).
-/// It gives this State a "ticker": a clock that ticks every frame
-/// (about 60 times per second). AnimationControllers need it (`vsync: this`),
-/// and it also pauses the animation when the screen is not visible
-/// (saves battery).
+
+/// `with TickerProviderStateMixin` = a MIXIN that adds a "ticker"
+/// (a clock that ticks every frame). AnimationControllers need it
+/// (`vsync: this`). It also pauses animations when the screen is hidden.
 class _FloatingShapesBackgroundState extends State<FloatingShapesBackground>
     with TickerProviderStateMixin {
-  // AnimationController = produces a value from 0.0 to 1.0 over a duration.
-  //
-  // `late` = "this will be created later, the first time it is used"
-  // (we need `this` for vsync, which isn't available before the object exists).
-  //
-  // `..` = CASCADE operator: create the controller, call .repeat() on it,
-  // and still store the CONTROLLER (not the result of repeat()) in the variable.
- 
-  // 1) Float controller: loops forever (0 → 1, 0 → 1, …) every 6 seconds.
-  //    Drives the gentle up/down movement.
+  // AnimationController = produces a value 0.0 → 1.0 over a duration.
+  // `late` = created the first time it's used (it needs `this` for vsync).
+  // `..repeat()` = CASCADE: create it, call repeat() on it, keep the controller.
+
+  // 1) Float: loops forever, one slow cycle every 6 s (calm movement).
   late final AnimationController _float = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 6),
   )..repeat();
- 
-  // 2) Intro controller: plays ONCE (0 → 1 in 0.8 s) when the page opens.
-  //    Drives the "shapes pop in" effect.
+
+  // 2) Intro: plays ONCE (1.4 s) when the page opens → shapes gently
+  //    fade in one after another (no "pop" in the user's face).
   late final AnimationController _intro = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 800),
+    duration: const Duration(milliseconds: 1400),
   )..forward();
- 
-  // dispose() runs when this widget is removed from the screen.
-  // We MUST stop and free the controllers, or they keep ticking
-  // in the background (memory leak).
-  // Rule: clean up OUR things first, then call super.dispose() LAST.
+
+  // ACCESSIBILITY: if the user turned on "Remove animations" in the phone
+  // settings, we keep the shapes still.
+  // didChangeDependencies() runs after initState and whenever things the
+  // widget depends on (like MediaQuery) change — the right place to read it.
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    if (reduceMotion) {
+      _float.stop();      // no floating
+      _intro.value = 1.0; // show shapes immediately, no pop-in
+    } else if (!_float.isAnimating) {
+      _float.repeat();
+    }
+  }
+
+  // dispose() runs when the widget leaves the screen: STOP the controllers,
+  // or they keep ticking in the background (memory leak).
+  // Rule: clean up our things first, super.dispose() LAST.
   @override
   void dispose() {
     _float.dispose();
     _intro.dispose();
     super.dispose();
   }
- 
+
   @override
   Widget build(BuildContext context) {
-    // LayoutBuilder tells us how much space we have (the real phone size).
-    // `size.maxWidth` / `size.maxHeight` = the available width and height.
+    // LayoutBuilder tells us the real available size (the phone screen).
     return LayoutBuilder(
       builder: (context, size) {
-        // Scale factors: Figma is 360 x 800. On a 412-wide phone,
-        // k = 412 / 360 = 1.14, so every shape becomes 14% bigger.
-        final k = size.maxWidth / 360;   // horizontal scale (sizes + left)
-        final ky = size.maxHeight / 800; // vertical scale (top positions)
- 
-        // AnimatedBuilder rebuilds ONLY its builder on every animation tick,
-        // not the whole page. That's efficient: the logo and button above
-        // do NOT rebuild 60 times a second.
-        // Listenable.merge = listen to BOTH controllers at once.
+        // Scale factors from the 360 x 800 Figma design to the real phone.
+        final k = size.maxWidth / 360;   // sizes + left positions
+        final ky = size.maxHeight / 800; // top positions
+
+        // AnimatedBuilder rebuilds ONLY this part on every tick (60x / s),
+        // not the logo/texts above → efficient.
         return AnimatedBuilder(
           animation: Listenable.merge([_float, _intro]),
           builder: (context, _) {
-            final t = _float.value; // current float value: 0 → 1, repeating
- 
+            final t = _float.value; // 0 → 1, repeating
             return Stack(
-              // Clip.hardEdge = cut off shapes that go outside the screen
-              // (two shapes are half outside on purpose).
-              clipBehavior: Clip.hardEdge,
+              clipBehavior: Clip.hardEdge, // cut shapes outside the screen
               children: [
-                // "collection for": build one widget for every shape in the
-                // list. `i` is the index (0, 1, 2…), used to delay each
-                // shape's intro.
+                // collection for: one widget per shape in the list
                 for (var i = 0; i < _shapes.length; i++)
                   _buildShape(_shapes[i], i, t, k, ky),
               ],
@@ -379,56 +436,41 @@ class _FloatingShapesBackgroundState extends State<FloatingShapesBackground>
       },
     );
   }
- 
+
   /// Builds ONE shape at its current animated position.
-  ///   s  = the shape's data
-  ///   index = its position in the list (for the staggered intro)
-  ///   t  = float progress (0..1)
-  ///   k, ky = scale factors
   Widget _buildShape(ShapeSpec s, int index, double t, double k, double ky) {
-    // ---- 1) Floating movement: a sine wave ----
-    // sin() goes smoothly -1 → 0 → 1 → 0 → -1, which is perfect for floating.
-    // 2π = one full wave. Each shape has its own speed and phase,
-    // so they don't all move together.
+    // ---- 1) Floating: a sine wave (smooth -1 → 1 → -1) ----
     final wave = 2 * math.pi * (t * s.speed + s.phase);
-    final dx = math.sin(wave) * s.floatX; // left/right offset in px
-    final dy = math.sin(wave) * s.floatY; // up/down offset in px
- 
-    // ---- 2) Intro: each shape starts slightly after the previous one ----
-    // shape 0 starts at 0%, shape 1 at 6%, shape 2 at 12%… (max 60%).
-    // .clamp(a, b) = keep the value between a and b.
-    final start = (index * 0.06).clamp(0.0, 0.6);
- 
-    // Convert the intro controller's value into THIS shape's own 0..1 progress,
-    // then apply a curve. easeOutBack = moves fast, slightly OVERSHOOTS,
-    // and settles, which gives a small "pop" feeling.
-    final introT = Curves.easeOutBack.transform(
+    final dx = math.sin(wave) * s.floatX;
+    final dy = math.sin(wave) * s.floatY;
+
+    // ---- 2) Intro: each shape starts a little after the previous one ----
+    final start = (index * 0.04).clamp(0.0, 0.5);
+    // easeOutCubic = starts moving, then slows down softly at the end,
+    // with NO overshoot → a smooth, calm appearance.
+    final introT = Curves.easeOutCubic.transform(
       ((_intro.value - start) / (1 - start)).clamp(0.0, 1.0),
     );
- 
+
     // ---- 3) The shape itself ----
     Widget shape = Container(
       width: s.width * k,
       height: s.height * k,
-      // Ternary operator: condition ? valueIfTrue : valueIfFalse
-      // If the shape has a custom child (QR / pin), no colored box behind it.
+      // ternary: condition ? ifTrue : ifFalse
       decoration: s.child != null
           ? null
           : BoxDecoration(
               color: s.color,
               shape: s.isCircle ? BoxShape.circle : BoxShape.rectangle,
-              // A circle can't have a borderRadius, so null for circles.
               borderRadius:
                   s.isCircle ? null : BorderRadius.circular(s.radius * k),
             ),
-      // `??` = "if the left side is null, use the right side".
-      // So: use the custom child if there is one; otherwise maybe a tape stripe.
+      // `??` = if the left side is null, use the right side.
       child: s.child ??
           (s.stripe
               ? Align(
-                  alignment: Alignment.center,
-                  // FractionallySizedBox = size as a FRACTION of the parent:
-                  // 16% of the box width, full height, giving a vertical tape line.
+                  // FractionallySizedBox = size as a FRACTION of the parent
+                  // (16% wide, full height) → vertical "tape" line.
                   child: FractionallySizedBox(
                     widthFactor: 0.16,
                     heightFactor: 1,
@@ -439,25 +481,20 @@ class _FloatingShapesBackgroundState extends State<FloatingShapesBackground>
                 )
               : null),
     );
- 
-    // FittedBox scales the custom child (QR / pin) to fit the shape's size.
+    // FittedBox scales custom children (QR / pin) to the shape's size.
     if (s.child != null) shape = FittedBox(child: shape);
- 
-    // ---- 4) Place it, and apply fade + scale + rotation ----
-    // Positioned = an exact position inside a Stack (left / top in px).
+
+    // ---- 4) Place it + fade + scale + rotate ----
     return Positioned(
       left: s.left * k + dx,
       top: s.top * ky + dy,
       child: Opacity(
-        // fade in: 0 = invisible → 1 = fully visible
-        // (clamp, because easeOutBack can go slightly above 1)
-        opacity: introT.clamp(0.0, 1.0),
+        // intro fade × the shape's own opacity (0.85 for the middle ones)
+        opacity: introT * s.opacity,
         child: Transform.scale(
-          // grow from 60% → 100% size during the intro
-          scale: 0.6 + 0.4 * introT,
+          scale: 0.94 + 0.06 * introT, // tiny grow 94% → 100% (subtle, not a pop)
           child: Transform.rotate(
-            // Transform.rotate uses RADIANS: degrees × π / 180
-            angle: s.angle * math.pi / 180,
+            angle: s.angle * math.pi / 180, // degrees → radians
             child: shape,
           ),
         ),
@@ -465,19 +502,17 @@ class _FloatingShapesBackgroundState extends State<FloatingShapesBackground>
     );
   }
 }
- 
+
 // =====================================================================
-// 4) THE SMALL QR PIECE (a 3 x 3 grid of rounded squares)
+// 5) THE SMALL QR PIECE (3 x 3 grid of rounded squares)
 // =====================================================================
- 
-/// A small reusable StatelessWidget: nothing changes inside it.
+
 class _QrCluster extends StatelessWidget {
   const _QrCluster();
- 
-  // `static const` = belongs to the CLASS (shared, created once),
-  // not to each object. 1 = filled square, 0 = empty.
+
+  // `static const` = belongs to the CLASS, created once. 1 = filled, 0 = empty.
   static const _pattern = [1, 0, 1, 1, 1, 0, 0, 1, 1];
- 
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -485,14 +520,12 @@ class _QrCluster extends StatelessWidget {
       height: 52,
       // GridView.count = a grid with a fixed number of columns.
       child: GridView.count(
-        crossAxisCount: 3,       // 3 columns → 9 items = 3 rows
-        mainAxisSpacing: 4,      // vertical gap
-        crossAxisSpacing: 4,     // horizontal gap
-        // The grid must NOT scroll (it's decoration).
-        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 3,
+        mainAxisSpacing: 4,
+        crossAxisSpacing: 4,
+        physics: const NeverScrollableScrollPhysics(), // decoration: no scrolling
         padding: EdgeInsets.zero,
         children: [
-          // collection for: one small square per pattern value
           for (final on in _pattern)
             Container(
               decoration: BoxDecoration(
