@@ -61,10 +61,7 @@ class TransactionsCard extends StatelessWidget {
                 trailing: Text(
                   tx.direction == 'IN' ? "+${tx.quantity}" : "-${tx.quantity}",
                   style: TextStyle(
-                    fontSize: Theme.of(context)
-                        .textTheme
-                        .displaySmall
-                        ?.fontSize,
+                    fontSize: Theme.of(context).textTheme.titleMedium?.fontSize,
                     color: tx.direction == 'IN'
                         ? Colors.green.shade700
                         : Theme.of(context).colorScheme.error,

@@ -1,4 +1,4 @@
-import 'package:aral_project/Admin/Dashboard/admin_dashboard.dart';
+import 'package:aral_project/Admin/DashboardPage/admin_dashboard.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';

@@ -1,4 +1,4 @@
-import 'package:aral_project/Admin/Dashboard/metric_card.dart';
+import 'package:aral_project/Admin/DashboardPage/metric_card.dart';
 import 'package:aral_project/Admin/components/transactions.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:flutter/material.dart';
