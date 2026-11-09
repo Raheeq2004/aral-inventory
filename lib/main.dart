@@ -28,7 +28,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Flutter Demo',
+      title: 'Aral Inventory',
       theme: AppTheme.lightTheme,
       // The app now opens on the Landing page.
       // "Sign in" there opens AdminRouting (for now, until the Login page exists).

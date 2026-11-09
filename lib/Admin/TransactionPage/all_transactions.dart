@@ -1,3 +1,4 @@
+import 'package:aral_project/Admin/TransactionPage/filter_sheet.dart';
 import 'package:aral_project/Admin/components/transactions.dart';
 import 'package:flutter/material.dart';
 
@@ -27,10 +28,13 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
               trailing: [
                 IconButton(
                   onPressed: () {
-                    // showModalBottomSheet(
-                    //   context: context,
-                    //   builder: (context) => const FilterModalBottomSheet(),
-                    // );
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      isDismissible: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => const FilterBottonSheetContent(),
+                    );
                   },
                   icon: const Icon(Icons.filter_list),
                 ),
