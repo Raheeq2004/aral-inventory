@@ -104,7 +104,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ],
               ),
               const SizedBox(height: 8),
-              const TransactionsCard(),
+              if (list.isEmpty)
+                const Text('No recent transactions')
+              else
+                Column(
+                  children: list
+                      .take(5)
+                      .map((transaction) => TransactionsCard(transaction))
+                      .toList(),
+                ),
             ],
           ),
         );

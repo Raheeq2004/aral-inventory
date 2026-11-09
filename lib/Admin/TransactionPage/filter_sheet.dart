@@ -1,4 +1,5 @@
 import 'package:aral_project/Admin/providers/filter_provider.dart';
+import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -403,10 +404,25 @@ class FilterBottonSheetContent extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Apply Button
+              // Inside FilterBottonSheetContent (filter_sheet.dart) -> Apply Filters button:
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: () {
+                    // 1. Send the filters directly to TransactionData
+                    Provider.of<TransactionData>(
+                      context,
+                      listen: false,
+                    ).setFilters(
+                      date: filterProvider.selectedDate,
+                      movement: filterProvider.selectedMovement,
+                      warehouse: filterProvider.selectedWarehouse,
+                      sort: filterProvider.selectedSort,
+                    );
+
+                    // 2. Close the bottom sheet
+                    Navigator.pop(context);
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppTheme.primaryColor,
                     padding: const EdgeInsets.symmetric(vertical: 16),
