@@ -1,3 +1,5 @@
+import 'dart:core';
+
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +7,111 @@ import 'package:flutter/material.dart';
 class TransactionData extends ChangeNotifier {
   List<TransactionModel> transactionDataList = [];
   bool isLoading = false;
+
+  // Search and Filter states
+  String _searchQuery = '';
+  String? _selectedDate;
+  String? _selectedMovement;
+  String? _selectedWarehouse;
+  String? _selectedSort;
+
+  // Getter that returns the filtered and sorted list of transactions
+  List<TransactionModel> get transactions {
+    var list = List<TransactionModel>.from(transactionDataList);
+
+    // 1. Text Search Filter (matches item name, code, or worker name)
+    if (_searchQuery.isNotEmpty) {
+      list = list.where((tx) {
+        final name = (tx.itemName).toLowerCase();
+        final code = (tx.itemCode).toLowerCase();
+        final worker = (tx.workerId).toLowerCase();
+
+        return name.contains(_searchQuery) ||
+            code.contains(_searchQuery) ||
+            worker.contains(_searchQuery);
+      }).toList();
+    }
+
+    // 2. Warehouse Filter ('WH1' or 'WH2')
+    if (_selectedWarehouse != null) {
+      list = list.where((tx) {
+        final loc = (tx.locationCode).toUpperCase();
+        return loc.startsWith(_selectedWarehouse!);
+      }).toList();
+    }
+
+    // 3. Movement Filter (Robust matching for 'IN', 'OUT', or 'Reversals')
+    if (_selectedMovement != null) {
+      final selected = _selectedMovement!.toLowerCase();
+      list = list.where((tx) {
+        final direction = (tx.direction).toLowerCase();
+        if (selected.contains('in')) {
+          return direction == 'in' || direction.contains('received');
+        } else if (selected.contains('out')) {
+          return direction == 'out' || direction.contains('issued');
+        } else if (selected.contains('reversal')) {
+          return direction.contains('reversal');
+        }
+        return direction.contains(selected);
+      }).toList();
+    }
+
+    // 4. Date Filter
+    if (_selectedDate != null) {
+      final now = DateTime.now();
+      list = list.where((tx) {
+        final txDate = tx.timestamp;
+        if (_selectedDate == 'Today') {
+          return txDate.year == now.year &&
+              txDate.month == now.month &&
+              txDate.day == now.day;
+        } else if (_selectedDate == 'Yesterday') {
+          final yesterday = now.subtract(const Duration(days: 1));
+          return txDate.year == yesterday.year &&
+              txDate.month == yesterday.month &&
+              txDate.day == yesterday.day;
+        } else if (_selectedDate == 'Last 7 days') {
+          final difference = now.difference(txDate).inDays;
+          return difference >= 0 && difference <= 7;
+        } else if (_selectedDate == 'This month') {
+          return txDate.year == now.year && txDate.month == now.month;
+        }
+        return true;
+      }).toList();
+    }
+
+    // 5. Sorting
+    if (_selectedSort != null) {
+      if (_selectedSort == 'Newest first') {
+        list.sort((a, b) => (b.timestamp).compareTo(a.timestamp));
+      } else if (_selectedSort == 'Oldest first') {
+        list.sort((a, b) => (a.timestamp).compareTo(b.timestamp));
+      } else if (_selectedSort == 'Largest quantity') {
+        list.sort((a, b) => b.quantity.compareTo(a.quantity));
+      }
+    }
+
+    return list;
+  }
+
+  // Setters called by the search bar and filter bottom sheet
+  void setSearchQuery(String query) {
+    _searchQuery = query.toLowerCase().trim();
+    notifyListeners();
+  }
+
+  void setFilters({
+    String? date,
+    String? movement,
+    String? warehouse,
+    String? sort,
+  }) {
+    _selectedDate = date;
+    _selectedMovement = movement;
+    _selectedWarehouse = warehouse;
+    _selectedSort = sort;
+    notifyListeners();
+  }
 
   Future<void> getTransactions() async {
     isLoading = true;
@@ -102,16 +209,19 @@ class TransactionData extends ChangeNotifier {
       //      IN 20  → OUT 20: −20 − 20 = −40
       final delta = updated.stockEffect - original.stockEffect;
       if (delta != 0) {
-        changes['items/${updated.itemCode}/quantity'] =
-            ServerValue.increment(delta);
+        changes['items/${updated.itemCode}/quantity'] = ServerValue.increment(
+          delta,
+        );
       }
     } else {
       // Different item: undo the effect on the OLD item,
       // apply the effect on the NEW item.
-      changes['items/${original.itemCode}/quantity'] =
-          ServerValue.increment(-original.stockEffect);
-      changes['items/${updated.itemCode}/quantity'] =
-          ServerValue.increment(updated.stockEffect);
+      changes['items/${original.itemCode}/quantity'] = ServerValue.increment(
+        -original.stockEffect,
+      );
+      changes['items/${updated.itemCode}/quantity'] = ServerValue.increment(
+        updated.stockEffect,
+      );
     }
     // (Changing only the LOCATION doesn't touch stock: stock is per item.)
 
@@ -120,9 +230,7 @@ class TransactionData extends ChangeNotifier {
     await root.update(changes);
 
     // 4) Update our local list so every screen shows the new values.
-    final index = transactionDataList.indexWhere(
-      (t) => t.transactionId == id,
-    );
+    final index = transactionDataList.indexWhere((t) => t.transactionId == id);
     if (index != -1) {
       transactionDataList[index] = updated.copyWith(
         editedBy: editedBy,

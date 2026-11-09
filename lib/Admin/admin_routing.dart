@@ -4,14 +4,14 @@ import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
- 
+
 class AdminRouting extends StatefulWidget {
   const AdminRouting({super.key});
- 
+
   @override
   State<AdminRouting> createState() => _AdminRoutingState();
 }
- 
+
 class _AdminRoutingState extends State<AdminRouting> {
   @override
   void initState() {
@@ -21,7 +21,7 @@ class _AdminRoutingState extends State<AdminRouting> {
       Provider.of<TransactionData>(context, listen: false).getTransactions();
     });
   }
- 
+
   int _currentIndex = 0;
 
   void _onTabChanged(int index) {
@@ -34,7 +34,7 @@ class _AdminRoutingState extends State<AdminRouting> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> _screens = [
+    final List<Widget> screens = [
       AdminDashboard(onNavigateToTransactions: _onTabChanged),
       const AllTransactionsPage(),
       const Center(child: Text('Reports Screen')),
@@ -51,7 +51,7 @@ class _AdminRoutingState extends State<AdminRouting> {
           const SizedBox(width: 10),
         ],
       ),
-      body: _screens[_currentIndex],
+      body: screens[_currentIndex],
       // Colors, icon sizes and type now come from
       // bottomNavigationBarTheme in Theme/theme.dart (active tab = orange).
       // No hard-coded colors here → change the theme once, the bar follows.
@@ -76,4 +76,3 @@ class _AdminRoutingState extends State<AdminRouting> {
     );
   }
 }
- 
