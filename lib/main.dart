@@ -1,5 +1,5 @@
-import 'package:aral_project/Admin/TransactionPage/all_transactions.dart';
 import 'package:aral_project/Admin/admin_routing.dart';
+import 'package:aral_project/Admin/providers/filter_provider.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:aral_project/firebase_options.dart';
@@ -15,8 +15,13 @@ void main() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => TransactionData(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (context) => TransactionData()),
+        ChangeNotifierProvider(
+          create: (context) => TransactionFilterProvider(),
+        ),
+      ],
       child: const MyApp(),
     ),
   );
@@ -31,7 +36,6 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'Aral Inventory',
       theme: AppTheme.lightTheme,
-
       home: const AdminRouting(),
     );
   }
