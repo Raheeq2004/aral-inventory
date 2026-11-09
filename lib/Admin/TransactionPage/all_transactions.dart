@@ -69,7 +69,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                       // Once the sheet closes, sync active filters from FilterProvider to TransactionData
                       context.read<TransactionData>().setFilters(
                         date: filterProvider.selectedDate,
-                        movement: filterProvider.selectedMovement,
+                        customDateRange: filterProvider.customDateRange,
                         warehouse: filterProvider.selectedWarehouse,
                         sort: filterProvider.selectedSort,
                       );
@@ -202,7 +202,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
   void _syncFilters(TransactionFilterProvider filterProvider) {
     context.read<TransactionData>().setFilters(
       date: filterProvider.selectedDate,
-      movement: filterProvider.selectedMovement,
+      customDateRange: filterProvider.customDateRange, // <-- Pass range here
       warehouse: filterProvider.selectedWarehouse,
       sort: filterProvider.selectedSort,
     );

@@ -11,6 +11,7 @@ class TransactionData extends ChangeNotifier {
   // Search and Filter states
   String _searchQuery = '';
   String? _selectedDate;
+  DateTimeRange? _customDateRange;
   String? _selectedMovement;
   String? _selectedWarehouse;
   String? _selectedSort;
@@ -49,18 +50,19 @@ class TransactionData extends ChangeNotifier {
           return direction == 'in' || direction.contains('received');
         } else if (selected.contains('out')) {
           return direction == 'out' || direction.contains('issued');
-        } else if (selected.contains('reversal')) {
-          return direction.contains('reversal');
         }
         return direction.contains(selected);
       }).toList();
     }
 
     // 4. Date Filter
+    // Inside TransactionData get transactions:
+    // 4. Date Filter
     if (_selectedDate != null) {
       final now = DateTime.now();
       list = list.where((tx) {
         final txDate = tx.timestamp;
+
         if (_selectedDate == 'Today') {
           return txDate.year == now.year &&
               txDate.month == now.month &&
@@ -75,11 +77,29 @@ class TransactionData extends ChangeNotifier {
           return difference >= 0 && difference <= 7;
         } else if (_selectedDate == 'This month') {
           return txDate.year == now.year && txDate.month == now.month;
+        } else if (_customDateRange != null) {
+          // Proper custom range evaluation (ignoring time discrepancies)
+          final startDate = DateTime(
+            _customDateRange!.start.year,
+            _customDateRange!.start.month,
+            _customDateRange!.start.day,
+          );
+          final endDate = DateTime(
+            _customDateRange!.end.year,
+            _customDateRange!.end.month,
+            _customDateRange!.end.day,
+            23,
+            59,
+            59,
+          );
+          return txDate.isAfter(
+                startDate.subtract(const Duration(seconds: 1)),
+              ) &&
+              txDate.isBefore(endDate.add(const Duration(seconds: 1)));
         }
         return true;
       }).toList();
     }
-
     // 5. Sorting
     if (_selectedSort != null) {
       if (_selectedSort == 'Newest first') {
@@ -102,12 +122,12 @@ class TransactionData extends ChangeNotifier {
 
   void setFilters({
     String? date,
-    String? movement,
+    DateTimeRange? customDateRange,
     String? warehouse,
     String? sort,
   }) {
     _selectedDate = date;
-    _selectedMovement = movement;
+    _customDateRange = customDateRange;
     _selectedWarehouse = warehouse;
     _selectedSort = sort;
     notifyListeners();
