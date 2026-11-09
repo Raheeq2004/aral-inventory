@@ -147,8 +147,38 @@ class FilterBottonSheetContent extends StatelessWidget {
                   ),
                   _buildCustomChoiceChip(
                     'Custom range...',
-                    filterProvider.selectedDate == 'Custom range...',
-                    (val) => filterProvider.setDate('Custom range...'),
+                    filterProvider.selectedDate != null &&
+                        ![
+                          'Today',
+                          'Yesterday',
+                          'Last 7 days',
+                          'This month',
+                        ].contains(filterProvider.selectedDate),
+                    (val) async {
+                      // Show Flutter's built-in date range picker
+                      final DateTimeRange? picked = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                        currentDate: DateTime.now(),
+                        builder: (context, child) {
+                          return Theme(
+                            data: Theme.of(context).copyWith(
+                              colorScheme: ColorScheme.light(
+                                primary: AppTheme.primaryColor,
+                                onPrimary: Colors.white,
+                                surface: AppTheme.surfaceColor,
+                              ),
+                            ),
+                            child: child!,
+                          );
+                        },
+                      );
+
+                      if (picked != null) {
+                        filterProvider.setCustomDateRange(picked);
+                      }
+                    },
                   ),
                 ],
               ),
@@ -194,11 +224,6 @@ class FilterBottonSheetContent extends StatelessWidget {
                     'OUT • issued',
                     filterProvider.selectedMovement == 'OUT • issued',
                     (val) => filterProvider.setMovement('OUT • issued'),
-                  ),
-                  _buildCustomChoiceChip(
-                    'Reversals',
-                    filterProvider.selectedMovement == 'Reversals',
-                    (val) => filterProvider.setMovement('Reversals'),
                   ),
                 ],
               ),
@@ -404,23 +429,20 @@ class FilterBottonSheetContent extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Apply Button
-              // Inside FilterBottonSheetContent (filter_sheet.dart) -> Apply Filters button:
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
-                    // 1. Send the filters directly to TransactionData
                     Provider.of<TransactionData>(
                       context,
                       listen: false,
                     ).setFilters(
                       date: filterProvider.selectedDate,
-                      movement: filterProvider.selectedMovement,
+                      customDateRange:
+                          filterProvider.customDateRange, // <-- Pass range here
                       warehouse: filterProvider.selectedWarehouse,
                       sort: filterProvider.selectedSort,
                     );
-
-                    // 2. Close the bottom sheet
                     Navigator.pop(context);
                   },
                   style: ElevatedButton.styleFrom(
