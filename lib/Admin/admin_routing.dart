@@ -34,7 +34,6 @@ class _AdminRoutingState extends State<AdminRouting> {
 
   @override
   Widget build(BuildContext context) {
-    // Move _screens inside build() so it can safely reference _onTabChanged
     final List<Widget> _screens = [
       AdminDashboard(onNavigateToTransactions: _onTabChanged),
       const AllTransactionsPage(),
@@ -72,7 +71,7 @@ class _AdminRoutingState extends State<AdminRouting> {
             label: 'Reports',
           ),
         ],
-        onTap: _onTabChanged, // Cleanly reuse your method here too
+        onTap: _onTabChanged,
       ),
     );
   }
