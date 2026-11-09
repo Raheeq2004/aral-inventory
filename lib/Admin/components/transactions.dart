@@ -1,4 +1,5 @@
 import 'package:aral_project/Admin/Models/transactions_model.dart';
+import 'package:aral_project/Admin/TransactionDetailPage/transaction_detail.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -41,6 +42,14 @@ class TransactionsCard extends StatelessWidget {
             return Card(
               margin: const EdgeInsets.symmetric(vertical: 4),
               child: ListTile(
+                // Tap a row → open A3 (Transaction detail) for THIS transaction.
+                // The transaction is passed through the page's constructor.
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TransactionDetailPage(transaction: tx),
+                  ),
+                ),
                 title: Text(tx.itemCode),
                 leading: Container(
                   padding: const EdgeInsets.all(8),
@@ -75,3 +84,5 @@ class TransactionsCard extends StatelessWidget {
     );
   }
 }
+
+//line 50 ************************
