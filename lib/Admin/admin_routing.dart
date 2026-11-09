@@ -4,14 +4,14 @@ import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
+ 
 class AdminRouting extends StatefulWidget {
   const AdminRouting({super.key});
-
+ 
   @override
   State<AdminRouting> createState() => _AdminRoutingState();
 }
-
+ 
 class _AdminRoutingState extends State<AdminRouting> {
   @override
   void initState() {
@@ -21,7 +21,7 @@ class _AdminRoutingState extends State<AdminRouting> {
       Provider.of<TransactionData>(context, listen: false).getTransactions();
     });
   }
-
+ 
   int _currentIndex = 0;
 
   void _onTabChanged(int index) {
@@ -53,14 +53,11 @@ class _AdminRoutingState extends State<AdminRouting> {
         ],
       ),
       body: _screens[_currentIndex],
+      // Colors, icon sizes and type now come from
+      // bottomNavigationBarTheme in Theme/theme.dart (active tab = orange).
+      // No hard-coded colors here → change the theme once, the bar follows.
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: const Color(0xFFF1F5F9),
-        selectedItemColor: const Color(0xFF78350F),
-        unselectedItemColor: const Color(0xFF475569),
-        selectedIconTheme: const IconThemeData(size: 26),
-        unselectedIconTheme: const IconThemeData(size: 24),
         items: const <BottomNavigationBarItem>[
           BottomNavigationBarItem(
             icon: Icon(Icons.grid_view_rounded),
@@ -80,3 +77,4 @@ class _AdminRoutingState extends State<AdminRouting> {
     );
   }
 }
+ 
