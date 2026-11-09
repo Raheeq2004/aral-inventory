@@ -23,14 +23,24 @@ class _AdminRoutingState extends State<AdminRouting> {
   }
 
   int _currentIndex = 0;
+
+  void _onTabChanged(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+  }
+
   final List<String> _titles = ['Dashboard', 'Transactions', 'Reports'];
-  final List<Widget> _screens = [
-    const AdminDashboard(),
-    const AllTransactionsPage(),
-    const Center(child: Text('Reports Screen')),
-  ];
+
   @override
   Widget build(BuildContext context) {
+    // Move _screens inside build() so it can safely reference _onTabChanged
+    final List<Widget> _screens = [
+      AdminDashboard(onNavigateToTransactions: _onTabChanged),
+      const AllTransactionsPage(),
+      const Center(child: Text('Reports Screen')),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
@@ -39,7 +49,7 @@ class _AdminRoutingState extends State<AdminRouting> {
           const ConnectivityBadge(),
           const SizedBox(width: 8),
           IconButton(onPressed: () {}, icon: const Icon(Icons.logout_rounded)),
-          SizedBox(width: 10),
+          const SizedBox(width: 10),
         ],
       ),
       body: _screens[_currentIndex],
@@ -47,12 +57,8 @@ class _AdminRoutingState extends State<AdminRouting> {
         currentIndex: _currentIndex,
         type: BottomNavigationBarType.fixed,
         backgroundColor: const Color(0xFFF1F5F9),
-        selectedItemColor: const Color(
-          0xFF78350F,
-        ), // Deep warm brown for selected item/pill
-        unselectedItemColor: const Color(
-          0xFF475569,
-        ), // Slate gray for unselected items
+        selectedItemColor: const Color(0xFF78350F),
+        unselectedItemColor: const Color(0xFF475569),
         selectedIconTheme: const IconThemeData(size: 26),
         unselectedIconTheme: const IconThemeData(size: 24),
         items: const <BottomNavigationBarItem>[
@@ -69,11 +75,7 @@ class _AdminRoutingState extends State<AdminRouting> {
             label: 'Reports',
           ),
         ],
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onTap: _onTabChanged, // Cleanly reuse your method here too
       ),
     );
   }

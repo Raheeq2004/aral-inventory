@@ -6,7 +6,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 class AdminDashboard extends StatefulWidget {
-  const AdminDashboard({super.key});
+  final Function(int)? onNavigateToTransactions;
+  const AdminDashboard({super.key, this.onNavigateToTransactions});
 
   @override
   State<AdminDashboard> createState() => _AdminDashboardState();
@@ -90,7 +91,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('Recent transactions'),
-                  TextButton(onPressed: () {}, child: const Text('See all')),
+                  TextButton(
+                    onPressed: () {
+                      if (widget.onNavigateToTransactions != null) {
+                        widget.onNavigateToTransactions!(
+                          1,
+                        ); // Navigate to Transactions tab
+                      }
+                    },
+                    child: const Text('See all'),
+                  ),
                 ],
               ),
               const SizedBox(height: 8),

@@ -1,3 +1,4 @@
+import 'package:aral_project/Admin/TransactionPage/all_transactions.dart';
 import 'package:aral_project/Admin/admin_routing.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Theme/theme.dart';
@@ -28,8 +29,9 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Flutter Demo',
+      title: 'Aral Inventory',
       theme: AppTheme.lightTheme,
+
       home: const AdminRouting(),
     );
   }
