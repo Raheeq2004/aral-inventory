@@ -65,6 +65,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                         context.read<TransactionData>().setFilters(
                           date: filterProvider.selectedDate,
                           customDateRange: filterProvider.customDateRange,
+                          movement: filterProvider.selectedMovement, // FIX: pass the IN/OUT filter
                           warehouse: filterProvider.selectedWarehouse,
                           sort: filterProvider.selectedSort,
                         );
@@ -207,6 +208,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
     context.read<TransactionData>().setFilters(
       date: filterProvider.selectedDate,
       customDateRange: filterProvider.customDateRange,
+      movement: filterProvider.selectedMovement, // FIX: pass the IN/OUT filter
       warehouse: filterProvider.selectedWarehouse,
       sort: filterProvider.selectedSort,
     );

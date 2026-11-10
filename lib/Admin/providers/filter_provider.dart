@@ -82,6 +82,7 @@ class TransactionFilterProvider extends ChangeNotifier {
   void resetAll() {
     _selectedDate = null;
     _customDateRange = null;
+    _selectedMovement = null; // FIX: was not cleared by Reset / Clear all
     _selectedWarehouse = null;
     _selectedSort = null;
     notifyListeners();
