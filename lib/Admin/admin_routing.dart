@@ -38,7 +38,7 @@ class _AdminRoutingState extends State<AdminRouting> {
     final List<Widget> screens = [
       AdminDashboard(onNavigateToTransactions: _onTabChanged),
       const AllTransactionsPage(),
-      const Center(child: Text('Reports Screen')),
+      const ReportsPage(), // Dina's Reports page (was a placeholder text)
     ];
 
     return Scaffold(

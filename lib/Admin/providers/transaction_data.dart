@@ -124,11 +124,13 @@ class TransactionData extends ChangeNotifier {
   void setFilters({
     String? date,
     DateTimeRange? customDateRange,
+    String? movement, // FIX: the IN/OUT filter was never passed in
     String? warehouse,
     String? sort,
   }) {
     _selectedDate = date;
     _customDateRange = customDateRange;
+    _selectedMovement = movement;
     _selectedWarehouse = warehouse;
     _selectedSort = sort;
     notifyListeners();
