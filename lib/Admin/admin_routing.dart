@@ -1,4 +1,5 @@
 import 'package:aral_project/Admin/DashboardPage/admin_dashboard.dart';
+import 'package:aral_project/Admin/ReportsPage/reports_page.dart';
 import 'package:aral_project/Admin/TransactionPage/all_transactions.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
@@ -27,7 +28,7 @@ class _AdminRoutingState extends State<AdminRouting> {
   final List<Widget> _screens = [
     const AdminDashboard(),
     const AllTransactionsPage(),
-    const Center(child: Text('Reports Screen')),
+    const ReportsPage(),
   ];
   @override
   Widget build(BuildContext context) {

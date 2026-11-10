@@ -30,11 +30,15 @@ environment:
 dependencies:
   connectivity_plus: ^7.3.2
   cupertino_icons: ^1.0.8
+  excel: ^4.0.6
+  file_saver: ^0.2.14
   firebase_core: ^5.1.0
   firebase_database: ^13.0.1
   flutter:
     sdk: flutter
   intl: ^0.20.3
+  open_filex: ^5.0.0
+  path_provider: ^2.1.5
   provider: ^6.1.5+1
 
 dev_dependencies:

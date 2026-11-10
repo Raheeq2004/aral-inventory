@@ -1,5 +1,8 @@
 import 'package:aral_project/Admin/components/transactions.dart';
+import 'package:aral_project/Admin/ReportsPage/excel_export_services.dart';
+import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class AllTransactionsPage extends StatefulWidget {
   const AllTransactionsPage({super.key});
@@ -72,8 +75,11 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // Handle FAB action
-        },
+          ExcelExportService.exportAndNotify(
+            context: context,
+            transactions: context.read<TransactionData>().transactionDataList,
+          );        
+          },
         child: const Icon(Icons.download),
       ),
     );
