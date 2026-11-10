@@ -1,4 +1,3 @@
-
 import 'dart:async'; // TimeoutException
 import 'package:flutter/material.dart';//import wedgets
 import 'package:flutter/services.dart'; // FilteringTextInputFormatter
@@ -9,6 +8,7 @@ import 'package:intl/intl.dart' show DateFormat;
 import 'package:provider/provider.dart';// context.read<TransactionData>()
  
 import 'package:aral_project/Admin/Models/transactions_model.dart';
+import 'package:aral_project/Admin/Models/transaction_types.dart'; // the types list
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Theme/theme.dart';
  
@@ -39,6 +39,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   late final TextEditingController _qtyCtrl;
  
   late String _direction; // 'IN' or 'OUT' (the SegmentedButton)
+  late String _type; // transaction type CODE (e.g. 'issue_out')
+  late String _originalType; // the type when the page opened (normalized)
   late String _itemName; // shown under the product field
  
   bool _isSaving = false; // true while waiting for Firebase
@@ -59,6 +61,10 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     _locationCtrl = TextEditingController(text: tx.locationCode);
     _qtyCtrl = TextEditingController(text: tx.quantity.toString());
     _direction = tx.direction;
+    // normalizeType: turns old values like "Purchase Receipt" into a code
+    // ('purchase_receipt') that matches the direction.
+    _originalType = normalizeType(tx.type, tx.direction);
+    _type = _originalType;
     _itemName = tx.itemName;
   }
  
@@ -77,7 +83,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       _itemCtrl.text.trim() != tx.itemCode ||
       _locationCtrl.text.trim().toUpperCase() != tx.locationCode ||
       _qtyCtrl.text.trim() != tx.quantity.toString() ||
-      _direction != tx.direction;
+      _direction != tx.direction ||
+      _type != _originalType;
  
   // ===================================================================
   // SAVE
@@ -129,6 +136,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         locationCode: newLocation,
         quantity: newQty,
         direction: _direction,
+        type: _type, // the chosen type code
       );
  
       // 5) Save through the provider (transaction + stock, atomic).
@@ -334,7 +342,15 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                   // null onSelectionChanged = disabled (when read-only)
                   onSelectionChanged: readOnly
                       ? null
-                      : (s) => setState(() => _direction = s.first),
+                      : (s) => setState(() {
+                          _direction = s.first;
+                          // The type must belong to the new direction.
+                          // If it doesn't (e.g. 'صرف' after switching to IN),
+                          // pick the default type for that direction.
+                          if (!typesFor(_direction).any((t) => t.code == _type)) {
+                            _type = defaultTypeFor(_direction);
+                          }
+                        }),
                   style: SegmentedButton.styleFrom(
                     selectedBackgroundColor: isIn
                         ? AppTheme.successColor.withValues(alpha: 0.15)
@@ -343,6 +359,46 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 ),
                 const SizedBox(height: 16),
  
+                // ---------------- Transaction type (NEW) ----------------
+                const _FieldLabel('Transaction type'),
+                // Directionality(rtl) = lay this field out right-to-left,
+                // so the Arabic text and the arrow sit on the correct sides.
+                Directionality(
+                  textDirection: TextDirection.rtl,
+                  child: DropdownButtonFormField<String>(
+                    // key: ValueKey(...) → when the direction (or type)
+                    // changes, Flutter rebuilds this field from scratch so it
+                    // shows the new list and the new value.
+                    key: ValueKey('$_direction-$_type'),
+                    initialValue: _type, // the selected type code
+                    isExpanded: true, // long Arabic labels don't overflow
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.category_outlined),
+                    ),
+                    // One DropdownMenuItem per type of the current direction.
+                    // value = the CODE (saved), child = the Arabic LABEL (shown).
+                    // (A reversal row keeps its special type, shown but locked.)
+                    items: [
+                      ...typesFor(_direction),
+                      if (_type == kReversalType.code) kReversalType,
+                    ]
+                        .map(
+                          (t) => DropdownMenuItem<String>(
+                            value: t.code,
+                            child: Text(t.label),
+                          ),
+                        )
+                        .toList(),
+                    // null onChanged = disabled (read-only / saving)
+                    onChanged: (readOnly || _type == kReversalType.code)
+                        ? null
+                        : (code) {
+                            if (code != null) setState(() => _type = code);
+                          },
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 // ---------------- Worker (read-only) ----------------
                 // Who scanned it never changes → it's the audit trail.
                 const _FieldLabel('Worker'),
@@ -448,6 +504,12 @@ class _SummaryCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 2),
+                // The type in Arabic (e.g. استلام مشتريات), from transaction_types.dart
+                Text(
+                  typeLabel(t.type, t.direction),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: color),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   'Logged by ${t.workerId} • $date',
                   style: Theme.of(context).textTheme.bodySmall,
@@ -501,4 +563,3 @@ class _ReversedBanner extends StatelessWidget {
     );
   }
 }
- 

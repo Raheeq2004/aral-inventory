@@ -68,6 +68,7 @@ class TransactionModel {
     String? locationCode,
     int? quantity,
     String? direction,
+    String? type, // NEW: transaction type code (e.g. 'issue_out')
     String? editedBy,
     DateTime? editedAt,
     bool? reversed,
@@ -79,7 +80,7 @@ class TransactionModel {
       locationCode: locationCode ?? this.locationCode,
       quantity: quantity ?? this.quantity,
       direction: direction ?? this.direction,
-      type: type,
+      type: type ?? this.type,
       workerId: workerId,
       timestamp: timestamp,
       editedBy: editedBy ?? this.editedBy,
@@ -114,4 +115,3 @@ class TransactionModel {
     };
   }
 }
- 

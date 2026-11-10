@@ -217,6 +217,7 @@ class TransactionData extends ChangeNotifier {
       'transactions/$id/locationCode': updated.locationCode,
       'transactions/$id/quantity': updated.quantity,
       'transactions/$id/direction': updated.direction,
+      'transactions/$id/type': updated.type, // NEW: type code (e.g. 'issue_out')
       'transactions/$id/editedBy': editedBy,
       'transactions/$id/editedAt': now.toUtc().toIso8601String(),
     };
