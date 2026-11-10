@@ -15,6 +15,11 @@ class TransactionModel {
   final DateTime? editedAt; // when it was last edited
   final bool reversed; // true after the admin reverses it (A4)
   final String? reversalOf; // on a reversal row: the id of the original
+
+  // ---- NEW (A4 – reverse): written on the ORIGINAL when it's reversed ----
+  final String? reversedBy; // who reversed it
+  final DateTime? reversedAt; // when
+  final String? reversalId; // the id of the new opposite transaction
  
   TransactionModel({
     this.transactionId,
@@ -30,6 +35,9 @@ class TransactionModel {
     this.editedAt,
     this.reversed = false, // default: not reversed
     this.reversalOf,
+    this.reversedBy,
+    this.reversedAt,
+    this.reversalId,
   });
  
   factory TransactionModel.fromMap(Map<String, dynamic> map, String id) {
@@ -52,6 +60,9 @@ class TransactionModel {
       editedAt: DateTime.tryParse(map['editedAt']?.toString() ?? ''),
       reversed: map['reversed'] == true,
       reversalOf: map['reversalOf'] as String?,
+      reversedBy: map['reversedBy'] as String?,
+      reversedAt: DateTime.tryParse(map['reversedAt']?.toString() ?? ''),
+      reversalId: map['reversalId'] as String?,
     );
   }
  
@@ -72,6 +83,9 @@ class TransactionModel {
     String? editedBy,
     DateTime? editedAt,
     bool? reversed,
+    String? reversedBy,
+    DateTime? reversedAt,
+    String? reversalId,
   }) {
     return TransactionModel(
       transactionId: transactionId,
@@ -87,6 +101,9 @@ class TransactionModel {
       editedAt: editedAt ?? this.editedAt,
       reversed: reversed ?? this.reversed,
       reversalOf: reversalOf,
+      reversedBy: reversedBy ?? this.reversedBy,
+      reversedAt: reversedAt ?? this.reversedAt,
+      reversalId: reversalId ?? this.reversalId,
     );
   }
  
@@ -94,6 +111,13 @@ class TransactionModel {
   /// IN adds the quantity (+), OUT removes it (−).
   /// A `get`ter: used like a field → tx.stockEffect
   int get stockEffect => direction == 'IN' ? quantity : -quantity;
+
+  /// true if THIS row is a reversal (the opposite transaction made by A4).
+  /// A reversal can't be edited or reversed again.
+  bool get isReversal => reversalOf != null || type == 'reversal';
+
+  /// The opposite direction: IN ↔ OUT (used to build the reversal).
+  String get oppositeDirection => direction == 'IN' ? 'OUT' : 'IN';
  
   Map<String, dynamic> toJson() {
     return {
@@ -112,6 +136,9 @@ class TransactionModel {
       if (editedAt != null) 'editedAt': editedAt!.toUtc().toIso8601String(),
       if (reversed) 'reversed': true,
       if (reversalOf != null) 'reversalOf': reversalOf,
+      if (reversedBy != null) 'reversedBy': reversedBy,
+      if (reversedAt != null) 'reversedAt': reversedAt!.toUtc().toIso8601String(),
+      if (reversalId != null) 'reversalId': reversalId,
     };
   }
 }
