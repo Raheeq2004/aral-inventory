@@ -16,19 +16,19 @@ class ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<ReportsPage> {
-  static const List<String> _warehouses = ['WH1', 'WH2'];
-
   late DateTime _from;
   late DateTime _to;
   Operations operations = Operations.all;
   String? _warehouse; // null = all
+  String? _worker; // null = all
+  String? _type; // null = all
   bool _exporting = false;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
-    _from = DateTime(now.year, now.month, 1); 
+    _from = DateTime(now.year, now.month, 1);
     _to = DateTime(now.year, now.month, now.day); // today
   }
 
@@ -49,6 +49,8 @@ class _ReportsPageState extends State<ReportsPage> {
           ExcelExportService.warehouseOf(tx.locationCode) != _warehouse) {
         return false;
       }
+      if (_worker != null && tx.workerId != _worker) return false;
+      if (_type != null && tx.type != _type) return false;
       return true;
     }).toList();
   }
@@ -82,17 +84,25 @@ class _ReportsPageState extends State<ReportsPage> {
 
     return Consumer<TransactionData>(
       builder: (context, data, child) {
-        final matches = _filter(data.transactionDataList);
+        final all = data.transactionDataList;
+        final matches = _filter(all);
         final count = NumberFormat('#,##0').format(matches.length);
         final fileName = ExcelExportService.fileNameFor(from: _from, to: _to);
         final canExport = !data.isLoading && !_exporting && matches.isNotEmpty;
+
+        // chip options come from the real data
+        final warehouses = _distinct(
+          all.map((t) => ExcelExportService.warehouseOf(t.locationCode)),
+        );
+        final workers = _distinct(all.map((t) => t.workerId));
+        final types = _distinct(all.map((t) => t.type));
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // title and description 
+              // title and description
               Text(
                 'Export transaction logs',
                 style: textTheme.displaySmall?.copyWith(fontSize: 24),
@@ -135,19 +145,28 @@ class _ReportsPageState extends State<ReportsPage> {
               ),
               const SizedBox(height: 24),
 
-              // transaction type
+              // IN / OUT
               _label(context, 'Transactions'),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _chip('All', operations == Operations.all,
-                      () => setState(() => operations = Operations.all)),
-                  _chip('IN only', operations == Operations.inOnly,
-                      () => setState(() => operations = Operations.inOnly)),
-                  _chip('OUT only', operations == Operations.outOnly,
-                      () => setState(() => operations = Operations.outOnly)),
+                  _chip(
+                    'All',
+                    operations == Operations.all,
+                    () => setState(() => operations = Operations.all),
+                  ),
+                  _chip(
+                    'IN only',
+                    operations == Operations.inOnly,
+                    () => setState(() => operations = Operations.inOnly),
+                  ),
+                  _chip(
+                    'OUT only',
+                    operations == Operations.outOnly,
+                    () => setState(() => operations = Operations.outOnly),
+                  ),
                 ],
               ),
               const SizedBox(height: 24),
@@ -155,17 +174,19 @@ class _ReportsPageState extends State<ReportsPage> {
               // warehouse
               _label(context, 'Warehouse'),
               const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  _chip('All', _warehouse == null,
-                      () => setState(() => _warehouse = null)),
-                  for (final wh in _warehouses)
-                    _chip(wh, _warehouse == wh,
-                        () => setState(() => _warehouse = wh)),
-                ],
-              ),
+              _singleSelect(warehouses, _warehouse, (v) => _warehouse = v),
+              const SizedBox(height: 24),
+
+              // worker
+              _label(context, 'Worker'),
+              const SizedBox(height: 8),
+              _singleSelect(workers, _worker, (v) => _worker = v),
+              const SizedBox(height: 24),
+
+              // transaction type (Purchase Receipt, Sales Fulfillment, ...)
+              _label(context, 'Type'),
+              const SizedBox(height: 8),
+              _singleSelect(types, _type, (v) => _type = v),
               const SizedBox(height: 28),
 
               // summary card
@@ -249,6 +270,24 @@ class _ReportsPageState extends State<ReportsPage> {
     );
   }
 
+  static List<String> _distinct(Iterable<String> values) =>
+      values.where((v) => v.trim().isNotEmpty).toSet().toList()..sort();
+
+  /// "All" + one chip per option. Only one can be selected at a time.
+  Widget _singleSelect(
+    List<String> options,
+    String? selected,
+    void Function(String?) onChanged,
+  ) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      _chip('All', selected == null, () => setState(() => onChanged(null))),
+      for (final o in options)
+        _chip(o, selected == o, () => setState(() => onChanged(o))),
+    ],
+  );
+
   Widget _label(BuildContext context, String text) => Text(
     text,
     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -266,7 +305,6 @@ class _ReportsPageState extends State<ReportsPage> {
     onSelected: (_) => onTap(),
   );
 }
-
 
 class _DateButton extends StatelessWidget {
   final DateTime date;

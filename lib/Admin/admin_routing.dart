@@ -43,7 +43,13 @@ class _AdminRoutingState extends State<AdminRouting> {
           SizedBox(width: 10),
         ],
       ),
-      body: _screens[_currentIndex],
+    body: NotificationListener<OpenReportsNotification>(
+  onNotification: (_) {
+    setState(() => _currentIndex = 2); // Reports tab
+    return true;
+  },
+  child: _screens[_currentIndex],
+),
       // Colors, icon sizes and type now come from
       // bottomNavigationBarTheme in Theme/theme.dart (active tab = orange).
       // No hard-coded colors here → change the theme once, the bar follows.

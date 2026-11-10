@@ -15,12 +15,18 @@ import 'package:path_provider/path_provider.dart';
 class ExcelExportService {
   ExcelExportService._();
 
-  /// Location codes 
-  static String warehouseOf(String locationCode) =>
-      locationCode.split('/').first.trim().toUpperCase();
+  /// Location codes look like "WH1-A1-01" (or "WH1 / A1 / 01").
+  /// Warehouse = the first part, split on dashes, slashes or spaces.
+  static String warehouseOf(String locationCode) {
+    final parts = locationCode
+        .trim()
+        .split(RegExp(r'[\s/\-]+'))
+        .where((p) => p.isNotEmpty);
+    return parts.isEmpty ? '' : parts.first.toUpperCase();
+  }
 
-  /// transactions_17-10-2026.xlsx          
-  /// transactions_01-10_17-10-2026.xlsx     
+  /// transactions_17-10-2026.xlsx
+  /// transactions_01-10_17-10-2026.xlsx
   static String fileNameFor({DateTime? from, DateTime? to}) {
     final day = DateFormat('dd-MM');
     final full = DateFormat('dd-MM-yyyy');
@@ -33,7 +39,7 @@ class ExcelExportService {
     return 'transactions_${day.format(from)}_${full.format(to)}.xlsx';
   }
 
-  /// creates excel file on device and returns path
+  /// creates excel file; returns path on mobile/desktop, null on web
   static Future<String?> _buildFile(
     List<TransactionModel> transactions,
     String fileName,
@@ -91,7 +97,8 @@ class ExcelExportService {
     final bytes = book.encode();
     if (bytes == null) throw Exception('Could not create the Excel file');
 
-        if (kIsWeb) {
+    // web: normal browser download
+    if (kIsWeb) {
       await FileSaver.instance.saveFile(
         name: fileName.replaceAll('.xlsx', ''),
         bytes: Uint8List.fromList(bytes),
@@ -101,7 +108,7 @@ class ExcelExportService {
       return null;
     }
 
-
+    // mobile / desktop
     Directory? dir;
     if (Platform.isAndroid) dir = await getExternalStorageDirectory();
     dir ??= await getApplicationDocumentsDirectory();
@@ -110,7 +117,6 @@ class ExcelExportService {
     await file.writeAsBytes(bytes, flush: true);
     return file.path;
   }
-
 
   static Future<bool> exportAndNotify({
     required BuildContext context,
@@ -146,7 +152,7 @@ class ExcelExportService {
                     label: 'OPEN',
                     textColor: AppTheme.primaryContainer,
                     onPressed: () => OpenFilex.open(path),
-            ),
+                  ),
           ),
         );
       return true;
