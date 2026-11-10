@@ -27,188 +27,191 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
     final filterProvider = context.watch<TransactionFilterProvider>();
     final transactionData = context.watch<TransactionData>();
 
-    return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Handle FAB action
-        },
-        child: const Icon(Icons.download),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Search Bar with Badged Filter Icon
-          Padding(
-            padding: const EdgeInsets.all(15),
-            child: SearchBar(
-              controller: _searchController,
-              hintText: 'Search product, code or worker',
-              leading: const Icon(Icons.search),
-              onChanged: (value) {
-                // Dynamically updates text search query inside TransactionData
-                context.read<TransactionData>().setSearchQuery(value);
-              },
-              trailing: [
-                if (_searchController.text.isNotEmpty)
+    // Replaced Scaffold with Stack to preserve the FloatingActionButton,
+    // or you can return the Column directly if you don't need the FAB here.
+    return Stack(
+      children: [
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 1. Search Bar with Badged Filter Icon
+            Padding(
+              padding: const EdgeInsets.all(15),
+              child: SearchBar(
+                controller: _searchController,
+                hintText: 'Search product, code or worker',
+                leading: const Icon(Icons.search),
+                onChanged: (value) {
+                  context.read<TransactionData>().setSearchQuery(value);
+                },
+                trailing: [
+                  if (_searchController.text.isNotEmpty)
+                    IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        context.read<TransactionData>().setSearchQuery('');
+                      },
+                    ),
                   IconButton(
-                    icon: const Icon(Icons.clear),
                     onPressed: () {
-                      _searchController.clear();
-                      context.read<TransactionData>().setSearchQuery('');
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        isDismissible: true,
+                        backgroundColor: Colors.transparent,
+                        builder: (context) => const FilterBottonSheetContent(),
+                      ).then((_) {
+                        context.read<TransactionData>().setFilters(
+                          date: filterProvider.selectedDate,
+                          customDateRange: filterProvider.customDateRange,
+                          warehouse: filterProvider.selectedWarehouse,
+                          sort: filterProvider.selectedSort,
+                        );
+                      });
                     },
-                  ),
-                IconButton(
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      isDismissible: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => const FilterBottonSheetContent(),
-                    ).then((_) {
-                      // Once the sheet closes, sync active filters from FilterProvider to TransactionData
-                      context.read<TransactionData>().setFilters(
-                        date: filterProvider.selectedDate,
-                        customDateRange: filterProvider.customDateRange,
-                        warehouse: filterProvider.selectedWarehouse,
-                        sort: filterProvider.selectedSort,
-                      );
-                    });
-                  },
-                  icon: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      const Icon(Icons.filter_list),
-                      if (filterProvider.activeFiltersCount > 0)
-                        Positioned(
-                          right: -4,
-                          top: -4,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
-                            ),
-                            child: Text(
-                              '${filterProvider.activeFiltersCount}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
+                    icon: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Icon(Icons.filter_list),
+                        if (filterProvider.activeFiltersCount > 0)
+                          Positioned(
+                            right: -4,
+                            top: -4,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
                               ),
-                              textAlign: TextAlign.center,
+                              constraints: const BoxConstraints(
+                                minWidth: 16,
+                                minHeight: 16,
+                              ),
+                              child: Text(
+                                '${filterProvider.activeFiltersCount}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
                             ),
                           ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 2. Active Filter Chips Row Container
+            if (filterProvider.hasActiveFilters) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 15.0),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      if (filterProvider.selectedDate != null)
+                        _buildActiveChip(filterProvider.selectedDate!, () {
+                          filterProvider.setDate(null);
+                          _syncFilters(filterProvider);
+                        }),
+                      if (filterProvider.selectedMovement != null)
+                        _buildActiveChip(filterProvider.selectedMovement!, () {
+                          filterProvider.setMovement(null);
+                          _syncFilters(filterProvider);
+                        }),
+                      if (filterProvider.selectedWarehouse != null)
+                        _buildActiveChip(filterProvider.selectedWarehouse!, () {
+                          filterProvider.setWarehouse(null);
+                          _syncFilters(filterProvider);
+                        }),
+                      if (filterProvider.selectedSort != null)
+                        _buildActiveChip(filterProvider.selectedSort!, () {
+                          filterProvider.setSort(null);
+                          _syncFilters(filterProvider);
+                        }),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () {
+                          filterProvider.resetAll();
+                          context.read<TransactionData>().setFilters();
+                        },
+                        style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                        child: const Text(
+                          'Clear all',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
+                      ),
                     ],
                   ),
                 ),
-              ],
-            ),
-          ),
+              ),
+              const SizedBox(height: 10),
+            ],
 
-          // 2. Active Filter Chips Row Container (Under Search Bar)
-          if (filterProvider.hasActiveFilters) ...[
+            // 3. Section Title
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 15.0),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    if (filterProvider.selectedDate != null)
-                      _buildActiveChip(filterProvider.selectedDate!, () {
-                        filterProvider.setDate(null);
-                        _syncFilters(filterProvider);
-                      }),
-                    if (filterProvider.selectedMovement != null)
-                      _buildActiveChip(filterProvider.selectedMovement!, () {
-                        filterProvider.setMovement(null);
-                        _syncFilters(filterProvider);
-                      }),
-                    if (filterProvider.selectedWarehouse != null)
-                      _buildActiveChip(filterProvider.selectedWarehouse!, () {
-                        filterProvider.setWarehouse(null);
-                        _syncFilters(filterProvider);
-                      }),
-                    if (filterProvider.selectedSort != null)
-                      _buildActiveChip(filterProvider.selectedSort!, () {
-                        filterProvider.setSort(null);
-                        _syncFilters(filterProvider);
-                      }),
-                    const SizedBox(width: 8),
-                    TextButton(
-                      onPressed: () {
-                        filterProvider.resetAll();
-                        context.read<TransactionData>().setFilters();
-                      },
-                      style: TextButton.styleFrom(padding: EdgeInsets.zero),
-                      child: const Text(
-                        'Clear all',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
+              child: Text(
+                'All Transactions (${transactionData.transactions.length})',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-          ],
+            const SizedBox(height: 8),
 
-          // 3. Section Title using Theme's bodyMedium style
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15.0),
-            child: Text(
-              'All Transactions (${transactionData.transactions.length})',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w500,
-              ),
+            // 4. Transaction List wrapped in Expanded
+            Expanded(
+              child: transactionData.isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : transactionData.transactions.isEmpty
+                  ? const Center(
+                      child: Text('No transactions found matching criteria.'),
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 15.0),
+                      itemCount: transactionData.transactions.length,
+                      itemBuilder: (context, index) {
+                        final transaction = transactionData.transactions[index];
+                        return TransactionsCard(transaction);
+                      },
+                    ),
             ),
-          ),
-          const SizedBox(height: 8),
+          ],
+        ),
 
-          // 4. Transaction List wrapped in Expanded (NOW USING transactionData.transactions)
-          Expanded(
-            child: transactionData.isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : transactionData.transactions.isEmpty
-                ? const Center(
-                    child: Text('No transactions found matching criteria.'),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.symmetric(horizontal: 15.0),
-                    itemCount: transactionData
-                        .transactions
-                        .length, // Uses filtered count
-                    itemBuilder: (context, index) {
-                      final transaction = transactionData
-                          .transactions[index]; // Uses filtered items
-                      return TransactionsCard(transaction);
-                    },
-                  ),
+        // Positioned FloatingActionButton to replicate Scaffold's FAB behavior inside a Stack
+        Positioned(
+          right: 16,
+          bottom: 16,
+          child: FloatingActionButton(
+            onPressed: () {
+              // Handle FAB action
+            },
+            child: const Icon(Icons.download),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  // Helper method to sync filter changes back to TransactionData
   void _syncFilters(TransactionFilterProvider filterProvider) {
     context.read<TransactionData>().setFilters(
       date: filterProvider.selectedDate,
-      customDateRange: filterProvider.customDateRange, // <-- Pass range here
+      customDateRange: filterProvider.customDateRange,
       warehouse: filterProvider.selectedWarehouse,
       sort: filterProvider.selectedSort,
     );
   }
 
-  // Helper widget for active filter chips below the search bar
   Widget _buildActiveChip(String label, VoidCallback onDeleted) {
     return Container(
       margin: const EdgeInsets.only(right: 8),
