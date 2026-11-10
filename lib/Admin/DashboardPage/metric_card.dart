@@ -1,22 +1,21 @@
-
 import 'package:flutter/material.dart';
- 
+
 class MetricCard extends StatelessWidget {
   final IconData icon;
   final String count;
   final String label;
- 
+
   const MetricCard({
     super.key,
     required this.icon,
     required this.count,
     required this.label,
   });
- 
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
- 
+
     return Card(
       // Automatically uses the card theme settings (background, border radius, border color) from AppTheme
       child: Padding(
@@ -55,5 +54,3 @@ class MetricCard extends StatelessWidget {
     );
   }
 }
- 
-
