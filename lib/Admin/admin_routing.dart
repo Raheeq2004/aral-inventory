@@ -5,14 +5,14 @@ import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
- 
+
 class AdminRouting extends StatefulWidget {
   const AdminRouting({super.key});
- 
+
   @override
   State<AdminRouting> createState() => _AdminRoutingState();
 }
- 
+
 class _AdminRoutingState extends State<AdminRouting> {
   @override
   void initState() {
@@ -22,16 +22,25 @@ class _AdminRoutingState extends State<AdminRouting> {
       Provider.of<TransactionData>(context, listen: false).getTransactions();
     });
   }
- 
+
   int _currentIndex = 0;
+
+  void _onTabChanged(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+  }
+
   final List<String> _titles = ['Dashboard', 'Transactions', 'Reports'];
-  final List<Widget> _screens = [
-    const AdminDashboard(),
-    const AllTransactionsPage(),
-    const ReportsPage(),
-  ];
+
   @override
   Widget build(BuildContext context) {
+    final List<Widget> screens = [
+      AdminDashboard(onNavigateToTransactions: _onTabChanged),
+      const AllTransactionsPage(),
+      const Center(child: Text('Reports Screen')),
+    ];
+
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
@@ -40,16 +49,10 @@ class _AdminRoutingState extends State<AdminRouting> {
           const ConnectivityBadge(),
           const SizedBox(width: 8),
           IconButton(onPressed: () {}, icon: const Icon(Icons.logout_rounded)),
-          SizedBox(width: 10),
+          const SizedBox(width: 10),
         ],
       ),
-    body: NotificationListener<OpenReportsNotification>(
-  onNotification: (_) {
-    setState(() => _currentIndex = 2); // Reports tab
-    return true;
-  },
-  child: _screens[_currentIndex],
-),
+      body: screens[_currentIndex],
       // Colors, icon sizes and type now come from
       // bottomNavigationBarTheme in Theme/theme.dart (active tab = orange).
       // No hard-coded colors here → change the theme once, the bar follows.
@@ -69,13 +72,8 @@ class _AdminRoutingState extends State<AdminRouting> {
             label: 'Reports',
           ),
         ],
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+        onTap: _onTabChanged,
       ),
     );
   }
 }
- 
