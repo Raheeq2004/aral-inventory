@@ -1,6 +1,7 @@
 import 'dart:core';
 
 import 'package:aral_project/Admin/Models/transactions_model.dart';
+import 'package:aral_project/Admin/Models/transaction_types.dart'; // kReversalType
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
@@ -259,5 +260,80 @@ class TransactionData extends ChangeNotifier {
       );
     }
     notifyListeners(); // → the list + dashboard rebuild
+  }
+
+  // ===================================================================
+  // NEW (A4): reverse a transaction (undo it WITHOUT deleting it)
+  // ===================================================================
+
+  /// Reverses [original]:
+  ///   1) ADDS a new opposite transaction (IN ↔ OUT, same item/qty/location,
+  ///      type "reversal", reversalOf = the original's id)
+  ///   2) MARKS the original: reversed = true, reversedBy, reversedAt, reversalId
+  ///   3) FIXES the stock: undoes the original's effect on the item
+  /// All 3 in ONE atomic multi-path update (all or nothing).
+  ///
+  /// Returns the new reversal's id.
+  Future<String> reverseTransaction({
+    required TransactionModel original,
+    required String reversedBy,
+  }) async {
+    // Safety: never reverse twice, never reverse a reversal.
+    if (original.reversed || original.isReversal) {
+      throw StateError('This transaction cannot be reversed');
+    }
+
+    final id = original.transactionId!;
+    final now = DateTime.now();
+    final root = FirebaseDatabase.instance.ref();
+
+    // push() creates a NEW unique id under "transactions" (like "-Oa8x…"),
+    // without writing anything yet. `.key` gives us that id.
+    final newId = root.child('transactions').push().key!;
+
+    // The opposite transaction.
+    final reversal = TransactionModel(
+      transactionId: newId,
+      itemCode: original.itemCode,
+      itemName: original.itemName,
+      locationCode: original.locationCode,
+      quantity: original.quantity, // same amount…
+      direction: original.oppositeDirection, // …opposite direction
+      type: kReversalType.code, // 'reversal' (shown as "عكس عملية")
+      workerId: reversedBy, // the admin who reversed it
+      timestamp: now,
+      reversalOf: id, // link back to the original
+    );
+
+    final Map<String, Object?> changes = {
+      // 1) the new transaction (toJson = the model as a Map)
+      'transactions/$newId': reversal.toJson(),
+      // 2) mark the original (it stays in the log)
+      'transactions/$id/reversed': true,
+      'transactions/$id/reversedBy': reversedBy,
+      'transactions/$id/reversedAt': now.toUtc().toIso8601String(),
+      'transactions/$id/reversalId': newId,
+      // 3) stock: the reversal's effect = the opposite of the original's
+      //    (IN 20 → −20 · OUT 20 → +20)
+      'items/${original.itemCode}/quantity': ServerValue.increment(
+        reversal.stockEffect,
+      ),
+    };
+
+    await root.update(changes); // waits for the server to confirm
+
+    // Update the local list → every screen refreshes.
+    final index = transactionDataList.indexWhere((t) => t.transactionId == id);
+    if (index != -1) {
+      transactionDataList[index] = original.copyWith(
+        reversed: true,
+        reversedBy: reversedBy,
+        reversedAt: now,
+        reversalId: newId,
+      );
+    }
+    transactionDataList.insert(0, reversal); // new row at the top
+    notifyListeners();
+    return newId;
   }
 }

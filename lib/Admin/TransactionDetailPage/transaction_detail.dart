@@ -164,6 +164,73 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     }
   }
  
+  // ===================================================================
+  // REVERSE (A4)
+  // ===================================================================
+
+  /// The confirmation dialog. Returns true if the admin taps "Reverse".
+  /// showDialog returns a Future that completes with the value given to
+  /// Navigator.pop(context, value).
+  Future<bool> _confirmReverse() async {
+    // The reversal's sign: an IN of 20 is undone by −20, an OUT by +20.
+    final sign = tx.direction == 'IN' ? '−' : '+';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.undo),
+        title: const Text('Reverse this transaction?'),
+        content: Text(
+          'An opposite transaction ($sign${tx.quantity} pcs) will be added '
+          'to undo #${tx.transactionId}. The original stays in the logs.',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(ctx, true),
+            icon: const Icon(Icons.undo),
+            label: const Text('Reverse'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false; // tapped outside → don't reverse
+  }
+
+  Future<void> _reverse() async {
+    // Unsaved edits? Reverse uses the SAVED values, so ask to save first.
+    if (_hasChanges) {
+      _showMessage('Save or cancel your changes before reversing.');
+      return;
+    }
+    if (!await _confirmReverse()) return; // admin tapped Cancel
+    if (!mounted) return;
+
+    final provider = context.read<TransactionData>();
+    setState(() => _isSaving = true); // disables the buttons
+
+    try {
+      await provider
+          .reverseTransaction(
+            original: tx,
+            reversedBy: 'Admin', // TODO: the logged-in admin (after Login)
+          )
+          .timeout(const Duration(seconds: 10));
+      if (!mounted) return;
+      _showMessage('Transaction #${tx.transactionId} reversed');
+      Navigator.pop(context); // back to the list (already updated)
+    } on TimeoutException {
+      _showMessage('No connection. The reversal will be sent when you\'re back online.');
+    } catch (e) {
+      _showMessage('Couldn\'t reverse. Try again.', isError: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
   void _showMessage(String text, {bool isError = false}) {
     if (!mounted) return;
     // ScaffoldMessenger shows a SnackBar (small message at the bottom).
@@ -215,12 +282,14 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isIn = _direction == 'IN';
-    final readOnly = tx.reversed || _isSaving; // reversed → can't edit
+    // locked = reversed, or this row IS a reversal → nothing can be edited
+    final locked = tx.reversed || tx.isReversal;
+    final readOnly = locked || _isSaving;
  
     // PopScope controls the phone's BACK button/gesture:
     // canPop: false when there are unsaved changes → we ask first.
     return PopScope(
-      canPop: !_hasChanges || tx.reversed,
+      canPop: !_hasChanges || locked,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return; // already closed, nothing to do
         if (await _confirmDiscard() && context.mounted) {
@@ -232,12 +301,15 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
           centerTitle: false,
           title: Text('Transaction #${tx.transactionId ?? ''}'),
           actions: [
-            // ↩ Reverse (A4). TODO: open the reverse dialog in A4.
-            IconButton(
-              tooltip: 'Reverse transaction',
-              icon: const Icon(Icons.undo),
-              onPressed: null, // null = disabled until A4 is built
-            ),
+            // ↩ Reverse (A4). Hidden when the transaction can't be reversed
+            // (already reversed, or it IS a reversal). Collection `if`.
+            if (!locked)
+              IconButton(
+                tooltip: 'Reverse transaction',
+                icon: const Icon(Icons.undo),
+                // disabled while saving/reversing (null = disabled)
+                onPressed: _isSaving ? null : _reverse,
+              ),
           ],
         ),
  
@@ -253,7 +325,18 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (tx.reversed) _ReversedBanner(),
+                // Yellow banner for locked transactions (two different texts)
+                if (tx.reversed)
+                  _ReversedBanner(
+                    text: 'This transaction was reversed'
+                        '${tx.reversalId != null ? ' (reversal #${tx.reversalId})' : ''}. '
+                        'It can no longer be edited.',
+                  ),
+                if (tx.isReversal)
+                  _ReversedBanner(
+                    text: 'This is the reversal of #${tx.reversalOf ?? '—'}. '
+                        'It can\'t be edited or reversed.',
+                  ),
                 _SummaryCard(transaction: tx),
                 const SizedBox(height: 20),
  
@@ -426,8 +509,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         ),
  
         // ---------------- Bottom buttons (stay fixed) ----------------
-        bottomNavigationBar: tx.reversed
-            ? null // reversed → nothing to save
+        bottomNavigationBar: locked
+            ? null // locked → nothing to save
             : SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
@@ -539,6 +622,9 @@ class _FieldLabel extends StatelessWidget {
  
 /// Shown at the top when the transaction was reversed (A4): read-only.
 class _ReversedBanner extends StatelessWidget {
+  const _ReversedBanner({required this.text});
+  final String text;
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -548,14 +634,14 @@ class _ReversedBanner extends StatelessWidget {
         color: AppTheme.warningContainer,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Icon(Icons.undo, color: AppTheme.warningColor),
-          SizedBox(width: 8),
+          const Icon(Icons.undo, color: AppTheme.warningColor),
+          const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'This transaction was reversed. It can no longer be edited.',
-              style: TextStyle(color: AppTheme.warningColor),
+              text,
+              style: const TextStyle(color: AppTheme.warningColor),
             ),
           ),
         ],
