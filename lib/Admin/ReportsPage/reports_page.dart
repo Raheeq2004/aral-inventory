@@ -1,4 +1,5 @@
 import 'package:aral_project/Admin/Models/transactions_model.dart';
+import 'package:aral_project/Admin/Models/transaction_types.dart'; // shared type list
 import 'package:aral_project/Admin/ReportsPage/excel_export_services.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Theme/theme.dart';
@@ -21,7 +22,7 @@ class _ReportsPageState extends State<ReportsPage> {
   Operations operations = Operations.all;
   String? _warehouse; // null = all
   String? _worker; // null = all
-  String? _type; // null = all
+  String? _type; // null = all · otherwise a type CODE (e.g. 'issue_out')
   bool _exporting = false;
 
   @override
@@ -50,7 +51,12 @@ class _ReportsPageState extends State<ReportsPage> {
         return false;
       }
       if (_worker != null && tx.workerId != _worker) return false;
-      if (_type != null && tx.type != _type) return false;
+      // Compare the NORMALIZED code, so old names ("Purchase Receipt") and
+      // new codes ('purchase_receipt') count as the same type.
+      if (_type != null &&
+          normalizeType(tx.type, tx.direction.toUpperCase()) != _type) {
+        return false;
+      }
       return true;
     }).toList();
   }
@@ -95,7 +101,12 @@ class _ReportsPageState extends State<ReportsPage> {
           all.map((t) => ExcelExportService.warehouseOf(t.locationCode)),
         );
         final workers = _distinct(all.map((t) => t.workerId));
-        final types = _distinct(all.map((t) => t.type));
+        // Type chips: the SHARED list (transaction_types.dart), only the
+        // types that actually appear in the data, in the list's order.
+        final presentTypes = all
+            .map((t) => normalizeType(t.type, t.direction.toUpperCase()))
+            .toSet();
+        final types = allTypeCodes.where(presentTypes.contains).toList();
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -183,10 +194,15 @@ class _ReportsPageState extends State<ReportsPage> {
               _singleSelect(workers, _worker, (v) => _worker = v),
               const SizedBox(height: 24),
 
-              // transaction type (Purchase Receipt, Sales Fulfillment, ...)
+              // transaction type: Arabic labels from the shared list
               _label(context, 'Type'),
               const SizedBox(height: 8),
-              _singleSelect(types, _type, (v) => _type = v),
+              _singleSelect(
+                types,
+                _type,
+                (v) => _type = v,
+                labelOf: labelForCode, // code → Arabic label
+              ),
               const SizedBox(height: 28),
 
               // summary card
@@ -277,14 +293,15 @@ class _ReportsPageState extends State<ReportsPage> {
   Widget _singleSelect(
     List<String> options,
     String? selected,
-    void Function(String?) onChanged,
-  ) => Wrap(
+    void Function(String?) onChanged, {
+    String Function(String)? labelOf, // optional: how to show each option
+  }) => Wrap(
     spacing: 8,
     runSpacing: 8,
     children: [
       _chip('All', selected == null, () => setState(() => onChanged(null))),
       for (final o in options)
-        _chip(o, selected == o, () => setState(() => onChanged(o))),
+        _chip(labelOf?.call(o) ?? o, selected == o, () => setState(() => onChanged(o))),
     ],
   );
 
