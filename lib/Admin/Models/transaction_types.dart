@@ -60,20 +60,30 @@ const TransactionType kReversalType = TransactionType(
 );
 
 // ---------------------------------------------------------------------
-// Old sample data stored English text (e.g. "Purchase Receipt").
-// This map translates those old values to the new codes, so old
-// transactions still show the right Arabic label.
-// Keys are lower-case so "Purchase Receipt" and "purchase receipt" match.
+// OLD names → new codes
+// The sample data was created with English names ("Purchase Receipt",
+// "Customer Return", …). This map translates each old name (lower-case)
+// into a code, PER DIRECTION, so old transactions show the right Arabic
+// type everywhere (A3, Reports filter, Excel).
+// A Map inside a Map: { old name: { 'IN': code, 'OUT': code } }
 // ---------------------------------------------------------------------
-const Map<String, String> _legacyToCode = {
-  'purchase receipt': 'purchase_receipt',
-  'sales fulfillment': 'sales_delivery',
-  'initial count': 'opening_balance',
-  'audit loss': 'adjustment_out',
-  'audit gain': 'adjustment_in',
-  'return': 'return_in',
-  'damaged': 'damaged',
-  // 'internal transfer' depends on the direction → handled in normalizeType
+const Map<String, Map<String, String>> _legacyToCode = {
+  'purchase receipt': {'IN': 'purchase_receipt'},
+  'customer return': {'IN': 'return_in', 'OUT': 'return_out'},
+  'return': {'IN': 'return_in', 'OUT': 'return_out'},
+  'internal transfer': {'IN': 'transfer_in', 'OUT': 'transfer_out'},
+  'internal transfer in': {'IN': 'transfer_in'},
+  'internal transfer out': {'OUT': 'transfer_out'},
+  'initial count': {'IN': 'opening_balance', 'OUT': 'adjustment_out'},
+  'initial stock count / adjustment': {'IN': 'opening_balance', 'OUT': 'adjustment_out'},
+  'audit gain': {'IN': 'adjustment_in'},
+  'audit loss': {'OUT': 'adjustment_out', 'IN': 'adjustment_in'},
+  'audit loss / shrinkage': {'OUT': 'adjustment_out', 'IN': 'adjustment_in'},
+  'damaged': {'OUT': 'damaged'},
+  'damaged / defective': {'OUT': 'damaged'},
+  'sales fulfillment': {'OUT': 'sales_delivery'},
+  // No exact match in our list → closest: "صرف لقسم / مشروع"
+  'sample / promotional': {'OUT': 'issue_out'},
 };
 
 // ---------------------------------------------------------------------
@@ -102,10 +112,8 @@ String normalizeType(String? stored, String direction) {
   if (value == kReversalType.code) return value;
 
   // 2) Old English value? translate it.
-  if (lower == 'internal transfer') {
-    return direction == 'OUT' ? 'transfer_out' : 'transfer_in';
-  }
-  final mapped = _legacyToCode[lower];
+  // `?[direction]` = look inside only if the old name was found (null-safe)
+  final mapped = _legacyToCode[lower]?[direction];
   if (mapped != null && typesFor(direction).any((t) => t.code == mapped)) {
     return mapped;
   }
@@ -126,3 +134,19 @@ String typeLabel(String? stored, String direction) {
       )
       .label;
 }
+
+/// The Arabic label for a CODE (e.g. 'issue_out' → 'صرف لقسم / مشروع').
+/// Used by the Reports page chips.
+String labelForCode(String code) {
+  if (code == kReversalType.code) return kReversalType.label;
+  for (final t in kTransactionTypes) {
+    if (t.code == code) return t.label;
+  }
+  return code;
+}
+
+/// All codes in display order (IN types, OUT types, then reversal).
+List<String> get allTypeCodes => [
+  ...kTransactionTypes.map((t) => t.code),
+  kReversalType.code,
+];

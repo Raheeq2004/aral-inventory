@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:aral_project/Admin/Models/transactions_model.dart';
+import 'package:aral_project/Admin/Models/transaction_types.dart'; // Arabic type labels
 import 'package:aral_project/Theme/theme.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:file_saver/file_saver.dart';
@@ -59,6 +60,7 @@ class ExcelExportService {
       'Direction',
       'Quantity',
       'Type',
+      'Notes', // Reversed / Reversal of #…
     ];
 
     final headerStyle = xl.CellStyle(
@@ -72,7 +74,7 @@ class ExcelExportService {
       );
       cell.value = xl.TextCellValue(headers[c]);
       cell.cellStyle = headerStyle;
-      sheet.setColumnWidth(c, c == 2 || c == 3 ? 28 : 16);
+      sheet.setColumnWidth(c, c == 2 || c == 3 || c == 8 || c == 9 ? 28 : 16);
     }
 
     final dateFmt = DateFormat('yyyy-MM-dd HH:mm');
@@ -90,7 +92,16 @@ class ExcelExportService {
         xl.TextCellValue(tx.workerId),
         xl.TextCellValue(tx.direction.toUpperCase()),
         xl.IntCellValue(isIn ? tx.quantity : -tx.quantity),
-        xl.TextCellValue(tx.type),
+        // Arabic type from the shared list (old names are translated too)
+        xl.TextCellValue(typeLabel(tx.type, tx.direction.toUpperCase())),
+        // Notes: is this row reversed, or is it a reversal?
+        xl.TextCellValue(
+          tx.reversed
+              ? 'Reversed${tx.reversalId != null ? ' (by #${tx.reversalId})' : ''}'
+              : tx.isReversal
+              ? 'Reversal of #${tx.reversalOf ?? '—'}'
+              : '',
+        ),
       ]);
     }
 
