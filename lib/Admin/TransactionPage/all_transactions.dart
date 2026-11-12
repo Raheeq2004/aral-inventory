@@ -65,7 +65,8 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                         context.read<TransactionData>().setFilters(
                           date: filterProvider.selectedDate,
                           customDateRange: filterProvider.customDateRange,
-                          movement: filterProvider.selectedMovement, // FIX: pass the IN/OUT filter
+                          movement: filterProvider
+                              .selectedMovement, // FIX: pass the IN/OUT filter
                           warehouse: filterProvider.selectedWarehouse,
                           sort: filterProvider.selectedSort,
                         );
@@ -187,18 +188,6 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                     ),
             ),
           ],
-        ),
-
-        // Positioned FloatingActionButton to replicate Scaffold's FAB behavior inside a Stack
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton(
-            onPressed: () {
-              // Handle FAB action
-            },
-            child: const Icon(Icons.download),
-          ),
         ),
       ],
     );

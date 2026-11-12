@@ -10,10 +10,46 @@ class TransactionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Determine the amount text
+    final String amountText = transaction.direction == 'IN'
+        ? "+${transaction.quantity}"
+        : "-${transaction.quantity}";
+
+    // Determine the color and text decorations based on transaction status
+    Color amountColor;
+    TextDecoration? textDecoration;
+    Color iconContainerColor;
+
+    if (transaction.reversed) {
+      // 1. REVERSED transaction: Faded original color with a strikethrough
+      final bool isIn = transaction.direction == 'IN';
+      amountColor = isIn
+          ? Colors.green.shade700.withValues(alpha: 0.4)
+          : Theme.of(context).colorScheme.error.withValues(alpha: 0.4);
+      textDecoration = TextDecoration.lineThrough;
+      iconContainerColor =
+          (isIn ? Colors.green : Theme.of(context).colorScheme.error)
+              .withValues(alpha: 0.08);
+    } else if (transaction.isReversal) {
+      // 2. REVERSAL transaction: Yellow theme color for text and soft yellow icon container
+      amountColor = AppTheme.warningColor;
+      textDecoration = null;
+      iconContainerColor = AppTheme.warningContainer.withValues(alpha: 0.6);
+    } else {
+      // 3. NORMAL transaction: Standard green for IN, Red for OUT
+      final bool isIn = transaction.direction == 'IN';
+      amountColor = isIn
+          ? Colors.green.shade700
+          : Theme.of(context).colorScheme.error;
+      textDecoration = null;
+      iconContainerColor =
+          (isIn ? Colors.green : Theme.of(context).colorScheme.error)
+              .withValues(alpha: 0.15);
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
-        // Tap a row → open A3 (Transaction detail) for THIS transaction.
         onTap: () => Navigator.push(
           context,
           MaterialPageRoute(
@@ -24,74 +60,25 @@ class TransactionsCard extends StatelessWidget {
         leading: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: transaction.direction == "IN"
-                ? Colors.green.withValues(alpha: 0.15)
-                : Theme.of(context).colorScheme.error.withValues(alpha: 0.15),
+            color: iconContainerColor,
             shape: BoxShape.circle,
           ),
           child: transaction.direction == 'IN'
-              ? const Icon(Icons.arrow_downward)
-              : const Icon(Icons.arrow_upward),
+              ? Icon(Icons.arrow_downward, color: amountColor)
+              : Icon(Icons.arrow_upward, color: amountColor),
         ),
-        // subtitle can be any widget → a Column: Joud's text + a small tag
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              "Location =: ${transaction.locationCode}\n${transaction.workerId} * ${DateFormat('d MMM, HH:mm').format(transaction.timestamp.toLocal())} ",
-            ),
-            // NEW (A4): tags for reversed / reversal rows (collection `if`)
-            if (transaction.reversed)
-              const _Tag(text: 'Reversed', icon: Icons.undo),
-            if (transaction.isReversal)
-              _Tag(
-                text: 'Reversal of #${transaction.reversalOf ?? '—'}',
-                icon: Icons.undo,
-              ),
-          ],
+        subtitle: Text(
+          "Location =: ${transaction.locationCode}\n${transaction.workerId} * ${DateFormat('d MMM, HH:mm').format(transaction.timestamp.toLocal())}",
         ),
         trailing: Text(
-          transaction.direction == 'IN'
-              ? "+${transaction.quantity}"
-              : "-${transaction.quantity}",
+          amountText,
           style: TextStyle(
             fontSize: Theme.of(context).textTheme.titleMedium?.fontSize,
-            color: transaction.direction == 'IN'
-                ? Colors.green.shade700
-                : Theme.of(context).colorScheme.error,
+            fontWeight: FontWeight.bold,
+            color: amountColor,
+            decoration: textDecoration,
+            decorationColor: amountColor,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// NEW (A4): a small yellow tag under a row ("Reversed" / "Reversal of #…").
-class _Tag extends StatelessWidget {
-  const _Tag({required this.text, required this.icon});
-  final String text;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: AppTheme.warningContainer,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min, // only as wide as its content
-          children: [
-            Icon(icon, size: 14, color: AppTheme.warningColor),
-            const SizedBox(width: 4),
-            Text(
-              text,
-              style: const TextStyle(fontSize: 12, color: AppTheme.warningColor),
-            ),
-          ],
         ),
       ),
     );
