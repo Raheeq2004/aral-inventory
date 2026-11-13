@@ -117,9 +117,9 @@ class AdminDashboard extends StatelessWidget {
 
         // ---- Today's numbers ------------------------------------------
         // where = keep only the items that match the test.
-        final today = all
-            .where((tx) => _isToday(tx.timestamp) && _countsForToday(tx))
-            .toList();
+               // Count ALL of today's transactions (reversals included),
+        // so the cards always match the Transactions list (Today filter).
+        final today = all.where((tx) => _isToday(tx.timestamp)).toList();
 
         // fold = walk the list and build ONE value (here: a sum).
         //   start at 0, then for each tx: sum + tx.quantity
