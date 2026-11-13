@@ -236,15 +236,9 @@ class _SunriseLogo extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
 
-        // LinearGradient = smooth blend between colors along a line.
-        // begin top-left → end bottom-right: light where "the sun hits",
-        // darker at the bottom → the tile looks 3D.
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [kLogoLight, kLogoMid, kLogoDeep],
-          stops: [0.0, 0.45, 1.0], // where each color sits (0 = start, 1 = end)
-        ),
+                // The gradient now lives in ONE place: theme.dart.
+        // Change it there → the splash (and anything else using it) follows.
+        gradient: AppTheme.sunriseGradient,
 
         // BoxShadow = the soft warm glow UNDER the logo, so it "floats".
         // offset moves it down; blurRadius softens it; negative spread

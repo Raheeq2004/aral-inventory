@@ -40,6 +40,37 @@ class AppTheme {
   // NEW: a thin border around the cream box so it's still visible
   // on the light page background (#F8FAFC) without being loud.
   static const Color warningBorder = Color(0xFFF2DFA6);
+
+    // --- Gradients (match the "Gradients" row in Figma) ---
+  //
+  // LinearGradient = a smooth blend between colours along a line.
+  //   begin / end → the direction of that line.
+  //     topLeft → bottomRight = diagonal (135° in Figma).
+  //   colors → the colours, in order along the line.
+  //   stops  → WHERE each colour sits on the line (0.0 = start, 1.0 = end).
+  //            Must have the same number of items as `colors`.
+  //
+  // `static const` works because every part (Alignment, Color, numbers) is
+  // a constant → Flutter creates the gradient ONCE and reuses it.
+  //
+  // Use it in any box:  BoxDecoration(gradient: AppTheme.peachGradient)
+
+  /// Strong orange: the splash logo.
+  static const LinearGradient sunriseGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFF7A35C), Color(0xFFE06A2B), Color(0xFFB0461A)],
+    stops: [0.0, 0.45, 1.0],
+  );
+
+  /// Light peach: the admin dashboard hero card.
+  /// It's light → put DARK text on it (onSecondaryContainer), not white.
+  static const LinearGradient peachGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFFFE3CC), Color(0xFFF9BE8E), Color(0xFFF3A26C)],
+    stops: [0.0, 0.65, 1.0],
+  );
  
   // -------------------------------------------------------------------
   // 2) THE THEME
