@@ -34,7 +34,7 @@ class TransactionsCard extends StatelessWidget {
       // 2. REVERSAL transaction: Yellow theme color for text and soft yellow icon container
       amountColor = AppTheme.warningColor;
       textDecoration = null;
-      iconContainerColor = AppTheme.warningContainer.withValues(alpha: 0.6);
+            iconContainerColor = AppTheme.warningBorder.withValues(alpha: 0.6);
     } else {
       // 3. NORMAL transaction: Standard green for IN, Red for OUT
       final bool isIn = transaction.direction == 'IN';

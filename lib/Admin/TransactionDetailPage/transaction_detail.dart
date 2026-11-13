@@ -325,18 +325,12 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Yellow banner for locked transactions (two different texts)
+                 // Cream banner for locked transactions.
+                // We pass only the short TITLE; the widget adds " · read only".
                 if (tx.reversed)
-                  _ReversedBanner(
-                    text: 'This transaction was reversed'
-                        '${tx.reversalId != null ? ' (reversal #${tx.reversalId})' : ''}. '
-                        'It can no longer be edited.',
-                  ),
+                  const _ReversedBanner(title: 'Reversed'),
                 if (tx.isReversal)
-                  _ReversedBanner(
-                    text: 'This is the reversal of #${tx.reversalOf ?? '—'}. '
-                        'It can\'t be edited or reversed.',
-                  ),
+                  _ReversedBanner(title: 'Reversal of #${tx.reversalOf ?? '—'}'),
                 _SummaryCard(transaction: tx),
                 const SizedBox(height: 20),
  
@@ -620,28 +614,52 @@ class _FieldLabel extends StatelessWidget {
   }
 }
  
-/// Shown at the top when the transaction was reversed (A4): read-only.
+/// Small cream banner at the top of a locked transaction (A4).
+/// Shows: ↶  **Reversed** · read only
 class _ReversedBanner extends StatelessWidget {
-  const _ReversedBanner({required this.text});
-  final String text;
+  const _ReversedBanner({required this.title});
+
+  final String title; // the bold part, e.g. 'Reversed'
 
   @override
   Widget build(BuildContext context) {
+    // textTheme = the text styles from our design system (bodyMedium, etc.)
+    final textTheme = Theme.of(context).textTheme;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
+      // symmetric = same left/right (12) and same top/bottom (10)
+      // → a slimmer box than before (it was 12 on all sides).
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: AppTheme.warningContainer,
+        color: AppTheme.warningContainer, // soft cream
+        border: Border.all(color: AppTheme.warningBorder), // thin line
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          const Icon(Icons.undo, color: AppTheme.warningColor),
+          // A smaller icon (default is 24) so it doesn't shout.
+          const Icon(Icons.undo, size: 18, color: AppTheme.warningColor),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(color: AppTheme.warningColor),
+            // Text.rich = ONE text with several styles inside it.
+            // Each TextSpan is a piece of the sentence.
+            child: Text.rich(
+              TextSpan(
+                // base style for all pieces: bodyMedium in dark amber
+                style: textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.warningColor,
+                ),
+                children: [
+                  // piece 1: the title in semi-bold
+                  TextSpan(
+                    text: title,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  // piece 2: normal weight
+                  const TextSpan(text: ' · read only'),
+                ],
+              ),
             ),
           ),
         ],
