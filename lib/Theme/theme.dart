@@ -32,8 +32,14 @@ class AppTheme {
   // --- Status colors (meaning, not decoration) ---
   static const Color successColor = Color(0xFF1E7A3C); // IN, synced, online
   static const Color errorColor = Color(0xFFBA1A1A); // OUT, errors, offline
-  static const Color warningColor = Color(0xFF7A6000); // pending, "synced late"
-  static const Color warningContainer = Color(0xFFFFF0B8); // warning chip bg
+  
+    // Dark amber → text + icons on yellow backgrounds (readable, not bright).
+  static const Color warningColor = Color(0xFF7A6000);
+  // Soft cream background (was #FFF0B8, too bright next to the red card).
+  static const Color warningContainer = Color(0xFFFFF8E6);
+  // NEW: a thin border around the cream box so it's still visible
+  // on the light page background (#F8FAFC) without being loud.
+  static const Color warningBorder = Color(0xFFF2DFA6);
  
   // -------------------------------------------------------------------
   // 2) THE THEME
