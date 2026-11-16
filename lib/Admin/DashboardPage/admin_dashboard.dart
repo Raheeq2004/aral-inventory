@@ -62,8 +62,8 @@ class AdminDashboard extends StatelessWidget {
   /// A reversal (and the original it cancels) is not a real stock
   /// movement: reversing "OUT 150" adds "IN 150", and counting it would
   /// show 150 pieces IN that never arrived. So we skip both.
-  static bool _countsForToday(TransactionModel tx) =>
-      !tx.isReversal && !tx.reversed;
+  // static bool _countsForToday(TransactionModel tx) =>
+  //     !tx.isReversal && !tx.reversed;
 
   /// "Good morning / afternoon / evening" depending on the hour.
   static String _greeting() {
@@ -117,7 +117,7 @@ class AdminDashboard extends StatelessWidget {
 
         // ---- Today's numbers ------------------------------------------
         // where = keep only the items that match the test.
-               // Count ALL of today's transactions (reversals included),
+        // Count ALL of today's transactions (reversals included),
         // so the cards always match the Transactions list (Today filter).
         final today = all.where((tx) => _isToday(tx.timestamp)).toList();
 
@@ -138,17 +138,16 @@ class AdminDashboard extends StatelessWidget {
         final lastLine = last == null
             ? 'No scans yet today'
             : 'Last: ${DateFormat('HH:mm').format(last.timestamp.toLocal())}'
-                  ' by ${last.workerId}';
+                  ' by ${last.stockKeeperId} • ${last.itemCode} (${last.quantity})';
 
         // ---- Recent: 5 newest, ALL transactions (reversals included) ----
         // [...all] = a COPY, so we don't reorder the provider's list.
         // `..sort(...)` (cascade) sorts the copy and returns the copy itself,
         // so we can continue with .take(5).
         // b.compareTo(a) → descending → newest first.
-        final recent =
-            ([...all]..sort((a, b) => b.timestamp.compareTo(a.timestamp)))
-                .take(5)
-                .toList();
+        final recent = ([
+          ...all,
+        ]..sort((a, b) => b.timestamp.compareTo(a.timestamp))).take(5).toList();
 
         // RefreshIndicator = pull down to reload. onRefresh must return a
         // Future → getTransactions() is async, so it fits.

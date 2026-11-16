@@ -1,62 +1,89 @@
 class TransactionModel {
   final String? transactionId;
+  final int numericId;
   final String itemCode;
   final String itemName;
+
+  // ---- NEW: Item & Location Metadata Columns ----
+  final String uomCode;
+  final String color;
+  final double length;
+  final double sw;
+  final double totalWeight;
   final String locationCode;
+  final String warehouse;
+  final String rack;
+  final int shelfNo;
+  final int stock;
+
   final int quantity;
   final String direction; // 'IN' or 'OUT'
   final String type;
-  final String workerId;
+  final String stockKeeperId;
   final DateTime timestamp;
- 
-  // ---- NEW (A3 – edit / A4 – reverse) ----
-  // `?` = nullable: these are empty (null) until someone edits/reverses.
-  final String? editedBy; // who last edited this transaction (audit trail)
-  final DateTime? editedAt; // when it was last edited
-  final bool reversed; // true after the admin reverses it (A4)
-  final String? reversalOf; // on a reversal row: the id of the original
 
-  // ---- NEW (A4 – reverse): written on the ORIGINAL when it's reversed ----
-  final String? reversedBy; // who reversed it
-  final DateTime? reversedAt; // when
-  final String? reversalId; // the id of the new opposite transaction
- 
+  // ---- Audit / Edit / Reverse Fields ----
+  final String? editedBy;
+  final DateTime? editedAt;
+  final bool reversed;
+  final String? reversalOf;
+  final String? reversedBy;
+  final DateTime? reversedAt;
+  final String? reversalId;
+
   TransactionModel({
     this.transactionId,
+    required this.numericId,
     required this.itemCode,
     required this.itemName,
+    required this.uomCode,
+    required this.color,
+    required this.length,
+    required this.sw,
+    required this.totalWeight,
     required this.locationCode,
+    required this.warehouse,
+    required this.rack,
+    required this.shelfNo,
+    required this.stock,
     required this.quantity,
     required this.direction,
     required this.type,
-    required this.workerId,
+    required this.stockKeeperId,
     required this.timestamp,
     this.editedBy,
     this.editedAt,
-    this.reversed = false, // default: not reversed
+    this.reversed = false,
     this.reversalOf,
     this.reversedBy,
     this.reversedAt,
     this.reversalId,
   });
- 
+
   factory TransactionModel.fromMap(Map<String, dynamic> map, String id) {
     return TransactionModel(
-      transactionId: id,
+      transactionId: map['transactionId'] ?? id,
+      numericId: (map['numericId'] as num?)?.toInt() ?? 0,
       itemCode: map['itemCode'] ?? '',
       itemName: map['itemName'] ?? '',
+      uomCode: map['uomCode'] ?? '',
+      color: map['color'] ?? '',
+      length: (map['length'] as num?)?.toDouble() ?? 0.0,
+      sw: (map['sw'] as num?)?.toDouble() ?? 0.0,
+      totalWeight: (map['totalWeight'] as num?)?.toDouble() ?? 0.0,
       locationCode: map['locationCode'] ?? '',
+      warehouse: map['warehouse'] ?? '',
+      rack: map['rack'] ?? '',
+      shelfNo: (map['shelfNo'] as num?)?.toInt() ?? 0,
+      stock: (map['stock'] as num?)?.toInt() ?? 0,
       quantity: (map['quantity'] as num?)?.toInt() ?? 0,
       direction: map['direction'] ?? '',
       type: map['type'] ?? '',
-      workerId: map['workerId'] ?? '',
+      stockKeeperId: map['stockKeeperId'] ?? map['workerId'] ?? '',
       timestamp: map['timestamp'] != null
           ? DateTime.parse(map['timestamp'])
           : DateTime.now(),
-      // NEW fields: older transactions don't have them → null / false.
       editedBy: map['editedBy'] as String?,
-      // tryParse returns null (instead of crashing) if the text is missing
-      // or not a valid date.
       editedAt: DateTime.tryParse(map['editedAt']?.toString() ?? ''),
       reversed: map['reversed'] == true,
       reversalOf: map['reversalOf'] as String?,
@@ -65,21 +92,24 @@ class TransactionModel {
       reversalId: map['reversalId'] as String?,
     );
   }
- 
-  /// copyWith = make a NEW TransactionModel that is the same as this one,
-  /// except for the fields you pass.
-  /// Example: tx.copyWith(quantity: 20) → same transaction, quantity 20.
-  /// We never change the original object (all fields are `final`);
-  /// we create an updated copy instead. Common Dart/Flutter pattern.
-  ///
-  /// `??` = "if the new value is null, keep the old one".
+
   TransactionModel copyWith({
     String? itemCode,
     String? itemName,
+    String? uomCode,
+    String? color,
+    double? length,
+    double? sw,
+    double? totalWeight,
     String? locationCode,
+    String? warehouse,
+    String? rack,
+    int? shelfNo,
+    int? stock,
     int? quantity,
     String? direction,
-    String? type, // NEW: transaction type code (e.g. 'issue_out')
+    String? type,
+    String? stockKeeperId,
     String? editedBy,
     DateTime? editedAt,
     bool? reversed,
@@ -89,13 +119,23 @@ class TransactionModel {
   }) {
     return TransactionModel(
       transactionId: transactionId,
+      numericId: numericId,
       itemCode: itemCode ?? this.itemCode,
       itemName: itemName ?? this.itemName,
+      uomCode: uomCode ?? this.uomCode,
+      color: color ?? this.color,
+      length: length ?? this.length,
+      sw: sw ?? this.sw,
+      totalWeight: totalWeight ?? this.totalWeight,
       locationCode: locationCode ?? this.locationCode,
+      warehouse: warehouse ?? this.warehouse,
+      rack: rack ?? this.rack,
+      shelfNo: shelfNo ?? this.shelfNo,
+      stock: stock ?? this.stock,
       quantity: quantity ?? this.quantity,
       direction: direction ?? this.direction,
       type: type ?? this.type,
-      workerId: workerId,
+      stockKeeperId: stockKeeperId ?? this.stockKeeperId,
       timestamp: timestamp,
       editedBy: editedBy ?? this.editedBy,
       editedAt: editedAt ?? this.editedAt,
@@ -106,38 +146,45 @@ class TransactionModel {
       reversalId: reversalId ?? this.reversalId,
     );
   }
- 
+
   /// How this transaction changes the item's stock:
   /// IN adds the quantity (+), OUT removes it (−).
-  /// A `get`ter: used like a field → tx.stockEffect
   int get stockEffect => direction == 'IN' ? quantity : -quantity;
 
-  /// true if THIS row is a reversal (the opposite transaction made by A4).
-  /// A reversal can't be edited or reversed again.
+  /// true if THIS row is a reversal.
   bool get isReversal => reversalOf != null || type == 'reversal';
 
-  /// The opposite direction: IN ↔ OUT (used to build the reversal).
+  /// The opposite direction: IN ↔ OUT
   String get oppositeDirection => direction == 'IN' ? 'OUT' : 'IN';
- 
+
   Map<String, dynamic> toJson() {
     return {
       'transactionId': transactionId,
+      'numericId': numericId,
       'itemCode': itemCode,
       'itemName': itemName,
+      'uomCode': uomCode,
+      'color': color,
+      'length': length,
+      'sw': sw,
+      'totalWeight': totalWeight,
       'locationCode': locationCode,
+      'warehouse': warehouse,
+      'rack': rack,
+      'shelfNo': shelfNo,
+      'stock': stock,
       'quantity': quantity,
       'direction': direction,
       'type': type,
-      'workerId': workerId,
+      'stockKeeperId': stockKeeperId,
       'timestamp': timestamp.toIso8601String(),
-      // Only add the optional fields when they have a value.
-      // `if (...)` inside a map literal = "collection if".
       if (editedBy != null) 'editedBy': editedBy,
       if (editedAt != null) 'editedAt': editedAt!.toUtc().toIso8601String(),
       if (reversed) 'reversed': true,
       if (reversalOf != null) 'reversalOf': reversalOf,
       if (reversedBy != null) 'reversedBy': reversedBy,
-      if (reversedAt != null) 'reversedAt': reversedAt!.toUtc().toIso8601String(),
+      if (reversedAt != null)
+        'reversedAt': reversedAt!.toUtc().toIso8601String(),
       if (reversalId != null) 'reversalId': reversalId,
     };
   }
