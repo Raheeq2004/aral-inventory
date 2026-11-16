@@ -26,7 +26,7 @@ class TransactionData extends ChangeNotifier {
       list = list.where((tx) {
         final name = (tx.itemName).toLowerCase();
         final code = (tx.itemCode).toLowerCase();
-        final worker = (tx.workerId).toLowerCase();
+        final worker = (tx.stockKeeperId).toLowerCase();
 
         return name.contains(_searchQuery) ||
             code.contains(_searchQuery) ||
@@ -220,7 +220,8 @@ class TransactionData extends ChangeNotifier {
       'transactions/$id/locationCode': updated.locationCode,
       'transactions/$id/quantity': updated.quantity,
       'transactions/$id/direction': updated.direction,
-      'transactions/$id/type': updated.type, // NEW: type code (e.g. 'issue_out')
+      'transactions/$id/type':
+          updated.type, // NEW: type code (e.g. 'issue_out')
       'transactions/$id/editedBy': editedBy,
       'transactions/$id/editedAt': now.toUtc().toIso8601String(),
     };
@@ -302,9 +303,19 @@ class TransactionData extends ChangeNotifier {
       quantity: original.quantity, // same amount…
       direction: original.oppositeDirection, // …opposite direction
       type: kReversalType.code, // 'reversal' (shown as "عكس عملية")
-      workerId: reversedBy, // the admin who reversed it
+      stockKeeperId: reversedBy, // the admin who reversed it
       timestamp: now,
-      reversalOf: id, // link back to the original
+      reversalOf: id,
+      numericId: original.numericId,
+      uomCode: original.uomCode,
+      color: original.color,
+      length: original.length,
+      sw: original.sw,
+      totalWeight: original.totalWeight,
+      warehouse: original.warehouse,
+      rack: original.rack,
+      shelfNo: original.shelfNo,
+      stock: original.stock, // link back to the original
     );
 
     final Map<String, Object?> changes = {

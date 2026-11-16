@@ -89,7 +89,7 @@ class ExcelExportService {
         xl.TextCellValue(tx.itemName),
         xl.TextCellValue(tx.locationCode),
         xl.TextCellValue(warehouseOf(tx.locationCode)),
-        xl.TextCellValue(tx.workerId),
+        xl.TextCellValue(tx.stockKeeperId),
         xl.TextCellValue(tx.direction.toUpperCase()),
         xl.IntCellValue(isIn ? tx.quantity : -tx.quantity),
         // Arabic type from the shared list (old names are translated too)

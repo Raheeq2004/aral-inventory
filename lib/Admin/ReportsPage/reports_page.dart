@@ -50,7 +50,7 @@ class _ReportsPageState extends State<ReportsPage> {
           ExcelExportService.warehouseOf(tx.locationCode) != _warehouse) {
         return false;
       }
-      if (_worker != null && tx.workerId != _worker) return false;
+      if (_worker != null && tx.stockKeeperId != _worker) return false;
       // Compare the NORMALIZED code, so old names ("Purchase Receipt") and
       // new codes ('purchase_receipt') count as the same type.
       if (_type != null &&
@@ -100,7 +100,7 @@ class _ReportsPageState extends State<ReportsPage> {
         final warehouses = _distinct(
           all.map((t) => ExcelExportService.warehouseOf(t.locationCode)),
         );
-        final workers = _distinct(all.map((t) => t.workerId));
+        final workers = _distinct(all.map((t) => t.stockKeeperId));
         // Type chips: the SHARED list (transaction_types.dart), only the
         // types that actually appear in the data, in the list's order.
         final presentTypes = all
@@ -301,7 +301,11 @@ class _ReportsPageState extends State<ReportsPage> {
     children: [
       _chip('All', selected == null, () => setState(() => onChanged(null))),
       for (final o in options)
-        _chip(labelOf?.call(o) ?? o, selected == o, () => setState(() => onChanged(o))),
+        _chip(
+          labelOf?.call(o) ?? o,
+          selected == o,
+          () => setState(() => onChanged(o)),
+        ),
     ],
   );
 
