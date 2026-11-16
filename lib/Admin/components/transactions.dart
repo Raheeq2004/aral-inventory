@@ -68,17 +68,44 @@ class TransactionsCard extends StatelessWidget {
               : Icon(Icons.arrow_upward, color: amountColor),
         ),
         subtitle: Text(
-          "Location : ${transaction.locationCode}\n${transaction.stockKeeperId} * ${DateFormat('d MMM, yyy').format(transaction.timestamp.toLocal())}",
+          "Location : ${transaction.locationCode}\n${transaction.stockKeeperId} • ${DateFormat('d MMM, yyyy').format(transaction.timestamp.toLocal())}",
         ),
-        trailing: Text(
-          amountText,
-          style: TextStyle(
-            fontSize: Theme.of(context).textTheme.titleMedium?.fontSize,
-            fontWeight: FontWeight.bold,
-            color: amountColor,
-            decoration: textDecoration,
-            decorationColor: amountColor,
-          ),
+        // ---> ADDED STOCK DISPLAY HERE IN TRAILING <---
+        trailing: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              amountText,
+              style: TextStyle(
+                fontSize: Theme.of(context).textTheme.titleMedium?.fontSize,
+                fontWeight: FontWeight.bold,
+                color: amountColor,
+                decoration: textDecoration,
+                decorationColor: amountColor,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.inventory_2_outlined,
+                  size: 13,
+                  color: AppTheme.textColorSecondary,
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  "Stock: ${transaction.stock}",
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    //fontSize: 11,
+                    color: AppTheme.textColorSecondary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

@@ -68,6 +68,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                           movement: filterProvider
                               .selectedMovement, // FIX: pass the IN/OUT filter
                           warehouse: filterProvider.selectedWarehouse,
+                          length: filterProvider.selectedLength,
                           sort: filterProvider.selectedSort,
                         );
                       });
@@ -136,6 +137,14 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                           filterProvider.setSort(null);
                           _syncFilters(filterProvider);
                         }),
+                      if (filterProvider.selectedLength != null)
+                        _buildActiveChip(
+                          'Length: ${filterProvider.selectedLength}',
+                          () {
+                            filterProvider.setLength(null);
+                            _syncFilters(filterProvider);
+                          },
+                        ),
                       const SizedBox(width: 8),
                       TextButton(
                         onPressed: () {
@@ -199,6 +208,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
       customDateRange: filterProvider.customDateRange,
       movement: filterProvider.selectedMovement, // FIX: pass the IN/OUT filter
       warehouse: filterProvider.selectedWarehouse,
+      length: filterProvider.selectedLength,
       sort: filterProvider.selectedSort,
     );
   }

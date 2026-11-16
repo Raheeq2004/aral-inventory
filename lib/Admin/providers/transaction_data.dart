@@ -15,6 +15,7 @@ class TransactionData extends ChangeNotifier {
   DateTimeRange? _customDateRange;
   String? _selectedMovement;
   String? _selectedWarehouse;
+  double? _selectedLength;
   String? _selectedSort;
 
   // Getter that returns the filtered and sorted list of transactions
@@ -101,7 +102,11 @@ class TransactionData extends ChangeNotifier {
         return true;
       }).toList();
     }
-    // 5. Sorting
+    // 5. Length Filter (NEW)
+    if (_selectedLength != null) {
+      list = list.where((tx) => tx.length == _selectedLength).toList();
+    }
+    // 6. Sorting
     if (_selectedSort != null) {
       if (_selectedSort == 'Newest first') {
         list.sort((a, b) => (b.timestamp).compareTo(a.timestamp));
@@ -127,12 +132,14 @@ class TransactionData extends ChangeNotifier {
     String? movement, // FIX: the IN/OUT filter was never passed in
     String? warehouse,
     String? sort,
+    double? length,
   }) {
     _selectedDate = date;
     _customDateRange = customDateRange;
     _selectedMovement = movement;
     _selectedWarehouse = warehouse;
     _selectedSort = sort;
+    _selectedLength = length;
     notifyListeners();
   }
 
