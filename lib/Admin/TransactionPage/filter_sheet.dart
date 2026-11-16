@@ -229,6 +229,50 @@ class FilterBottonSheetContent extends StatelessWidget {
               ),
               const SizedBox(height: 20),
 
+              // Length Section
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Length',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.textColorPrimary,
+                    ),
+                  ),
+                  Text(
+                    filterProvider.selectedLength != null
+                        ? '${filterProvider.selectedLength} Selected'
+                        : 'Select Length',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: filterProvider.selectedLength != null
+                          ? AppTheme.secondaryColor
+                          : AppTheme.textColorSecondary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Frequently used length chips based on your dataset
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (var len in [6.3, 5.7, 6.0, 6.8, 5.8, 5.0])
+                    _buildCustomChoiceChip(
+                      '$len',
+                      filterProvider.selectedLength == len,
+                      (val) => filterProvider.setLength(len),
+                    ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
               // Warehouse & Location Section
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -438,9 +482,12 @@ class FilterBottonSheetContent extends StatelessWidget {
                       listen: false,
                     ).setFilters(
                       date: filterProvider.selectedDate,
+                      movement: filterProvider.selectedMovement,
                       customDateRange:
                           filterProvider.customDateRange, // <-- Pass range here
                       warehouse: filterProvider.selectedWarehouse,
+                      length:
+                          filterProvider.selectedLength, // <-- Pass length here
                       sort: filterProvider.selectedSort,
                     );
                     Navigator.pop(context);

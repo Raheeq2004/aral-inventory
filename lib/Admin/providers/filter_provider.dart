@@ -5,6 +5,7 @@ class TransactionFilterProvider extends ChangeNotifier {
   DateTimeRange? _customDateRange;
   String? _selectedMovement;
   String? _selectedWarehouse;
+  double? _selectedLength;
   String? _selectedSort;
 
   // Getters
@@ -12,6 +13,7 @@ class TransactionFilterProvider extends ChangeNotifier {
   DateTimeRange? get customDateRange => _customDateRange;
   String? get selectedMovement => _selectedMovement;
   String? get selectedWarehouse => _selectedWarehouse;
+  double? get selectedLength => _selectedLength;
   String? get selectedSort => _selectedSort;
 
   // Count of active filters (excluding sort or including depending on preference)
@@ -21,6 +23,7 @@ class TransactionFilterProvider extends ChangeNotifier {
       _customDateRange,
       _selectedMovement,
       _selectedWarehouse,
+      _selectedLength,
       _selectedSort,
     ].where((f) => f != null).length;
   }
@@ -28,6 +31,13 @@ class TransactionFilterProvider extends ChangeNotifier {
   bool get hasActiveFilters => activeFiltersCount > 0;
 
   // Setters / Actions
+
+  // Setter for Length
+  void setLength(double? length) {
+    _selectedLength = (_selectedLength == length) ? null : length;
+    notifyListeners();
+  }
+
   // Update setDate inside TransactionFilterProvider:
   void setDate(String? date) {
     _selectedDate = (_selectedDate == date) ? null : date;
@@ -84,6 +94,7 @@ class TransactionFilterProvider extends ChangeNotifier {
     _customDateRange = null;
     _selectedMovement = null; // FIX: was not cleared by Reset / Clear all
     _selectedWarehouse = null;
+    _selectedLength = null;
     _selectedSort = null;
     notifyListeners();
   }
