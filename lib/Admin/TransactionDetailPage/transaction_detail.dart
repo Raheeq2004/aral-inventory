@@ -392,6 +392,22 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 ),
                 const SizedBox(height: 16),
 
+                // ---------------- Length (read-only) ----------------
+                // Length belongs to the ITEM, not to this transaction:
+                // the same item code can exist in several lengths, each with
+                // its own stock. So the admin can see it but not edit it here
+                // (editing it would point the transaction at another stock).
+                const _FieldLabel('Length'),
+                TextFormField(
+                  initialValue: _formatLength(tx.length),
+                  readOnly: true,
+                  enabled: false, // greyed out, like the Worker field
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.straighten), // ruler icon
+                  ),
+                ),
+                const SizedBox(height: 16),
+
                 // ---------------- Quantity ----------------
                 const _FieldLabel('Quantity'),
                 TextFormField(
@@ -679,4 +695,12 @@ class _ReversedBanner extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shows a length nicely: 6.3 → "6.3", 6.0 → "6", 0 (missing) → "—".
+/// toStringAsFixed(0) = the number with no decimals.
+String _formatLength(double length) {
+  if (length <= 0) return '—'; // old transactions may have no length
+  if (length == length.roundToDouble()) return length.toStringAsFixed(0);
+  return length.toString();
 }
