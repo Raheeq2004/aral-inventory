@@ -5,7 +5,7 @@ import 'package:flutter/services.dart'; // FilteringTextInputFormatter
 // `show DateFormat` = import ONLY DateFormat from intl.
 // (intl also has a class named TextDirection, which would clash with
 //  Flutter's TextDirection used for right-to-left Arabic text.)
-import 'package:intl/intl.dart' show DateFormat;
+import 'package:intl/intl.dart' show DateFormat, NumberFormat;
 import 'package:provider/provider.dart'; // context.read<TransactionData>()
 
 import 'package:aral_project/Admin/Models/transactions_model.dart';
@@ -45,6 +45,12 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   late String _itemName; // shown under the product field
 
   bool _isSaving = false; // true while waiting for Firebase
+
+  // NEW (item info): the item's row in `items`, loaded when the page opens.
+  // It gives us the Arabic name, the LIVE stock and the weight.
+  // null while loading, or if the item wasn't found.
+  ItemRow? _itemRow;
+  bool _loadingItem = true; // true until the item lookup finishes
   String? _itemError; // error text from the Firebase checks
   String? _locationError;
 
@@ -67,6 +73,30 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     _originalType = normalizeType(tx.type, tx.direction);
     _type = _originalType;
     _itemName = tx.itemName;
+    _loadItem(); // start loading the item info (doesn't block the page)
+  }
+
+  /// Loads this transaction's item row (code + length) from Firebase.
+  /// `async` → runs in the background; the page shows "…" meanwhile.
+  Future<void> _loadItem() async {
+    try {
+      // context.read is allowed here: it reads the provider once,
+      // without listening for changes.
+      final row = await context.read<TransactionData>().findItem(
+        tx.itemCode,
+        tx.length,
+      );
+      if (!mounted) return; // the page was closed while we were waiting
+      setState(() {
+        _itemRow = row;
+        // Show the real (Arabic) name from the item, if the row has one.
+        if (row?.name != null) _itemName = row!.name!;
+      });
+    } catch (_) {
+      // No internet / error → we just show "—" in the chips.
+    } finally {
+      if (mounted) setState(() => _loadingItem = false);
+    }
   }
 
   // dispose: free the controllers when the page closes (avoid memory leaks).
@@ -360,13 +390,22 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                       ? 'Enter the item code'
                       : null,
                 ),
-                const SizedBox(height: 6),
-                // Arabic names → right-to-left so mixed text reads correctly.
-                Text(
-                  _itemName,
-                  textDirection: TextDirection.rtl,
-                  textAlign: TextAlign.right,
-                  style: theme.textTheme.bodyMedium,
+                              const SizedBox(height: 10),
+
+                // NEW: Length · In stock · Total weight — one row of chips.
+                // Read-only INFO about the item (not editable fields).
+                _ItemInfoChips(
+                  length: _formatLength(tx.length),
+                  stock: _loadingItem
+                      ? '…'
+                      : (_itemRow == null
+                            ? '—'
+                            : '${_itemRow!.quantity} pcs'),
+                  weight: _loadingItem
+                      ? '…'
+                      : (_itemRow == null
+                            ? '—'
+                            : '${NumberFormat('#,##0.#').format(_itemRow!.totalWeightKg)} kg'),
                 ),
                 const SizedBox(height: 16),
 
@@ -389,22 +428,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                     }
                     return null;
                   },
-                ),
-                const SizedBox(height: 16),
-
-                // ---------------- Length (read-only) ----------------
-                // Length belongs to the ITEM, not to this transaction:
-                // the same item code can exist in several lengths, each with
-                // its own stock. So the admin can see it but not edit it here
-                // (editing it would point the transaction at another stock).
-                const _FieldLabel('Length'),
-                TextFormField(
-                  initialValue: _formatLength(tx.length),
-                  readOnly: true,
-                  enabled: false, // greyed out, like the Worker field
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.straighten), // ruler icon
-                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -701,6 +724,87 @@ class _ReversedBanner extends StatelessWidget {
 /// toStringAsFixed(0) = the number with no decimals.
 String _formatLength(double length) {
   if (length <= 0) return '—'; // old transactions may have no length
-  if (length == length.roundToDouble()) return length.toStringAsFixed(0);
-  return length.toString();
+  if (length == length.roundToDouble()) return '${length.toStringAsFixed(0)} m';
+  return '$length m';
+}
+
+/// One row of 3 equal chips: Length · In stock · Total weight.
+class _ItemInfoChips extends StatelessWidget {
+  const _ItemInfoChips({
+    required this.length,
+    required this.stock,
+    required this.weight,
+  });
+
+  final String length;
+  final String stock;
+  final String weight;
+
+  @override
+  Widget build(BuildContext context) {
+    // Row + Expanded: each chip gets an EQUAL third of the width,
+    // so the three always sit side by side (never wrap to a new line).
+    return Row(
+      children: [
+        Expanded(child: _InfoChip(label: 'Length', value: length)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _InfoChip(
+            label: 'In stock',
+            value: stock,
+            valueColor: AppTheme.successColor, // green → easy to spot
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(child: _InfoChip(label: 'Total weight', value: weight)),
+      ],
+    );
+  }
+}
+
+/// A small box: grey label on top, bold value below.
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({required this.label, required this.value, this.valueColor});
+
+  final String label;
+  final String value;
+  final Color? valueColor; // optional: null → normal text color
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.borderColor),
+      ),
+      child: Column(
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              color: AppTheme.textColorSecondary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          // FittedBox(scaleDown): if the value is too long for the chip
+          // (e.g. "12,345.6 kg"), the text shrinks a little instead of
+          // overflowing or cutting off.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: valueColor ?? AppTheme.textColorPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

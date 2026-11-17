@@ -440,4 +440,20 @@ class ItemRow {
   /// The item's name, if the row has one (fallback: "Item <code>").
   String nameOr(String code) =>
       (data['Name'] ?? data['name'] ?? 'Item $code').toString();
+
+  /// The name stored in the row, or null if the row has no name field
+  /// (Joud's current import has no "Name" column yet).
+  String? get name => (data['Name'] ?? data['name'])?.toString();
+
+  /// SW = specific weight: kilograms per METRE of this profile.
+  double get sw => (data['SW'] as num?)?.toDouble() ?? 0;
+
+  /// Bar length in metres.
+  double get length => (data['Length'] as num?)?.toDouble() ?? 0;
+
+  /// Total weight of ALL pieces in stock, in kg, CALCULATED from the live
+  /// stock: pieces × metres per piece × kg per metre.
+  /// (We calculate it instead of trusting the stored "Total Weight",
+  ///  which doesn't change when the stock changes.)
+  double get totalWeightKg => quantity * length * sw;
 }
