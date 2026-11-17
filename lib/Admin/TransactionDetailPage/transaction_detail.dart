@@ -117,12 +117,16 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       // 3) Firebase checks — only for what CHANGED.
       String newItemName = _itemName;
       if (newItem != tx.itemCode) {
-        final item = await provider.findItem(newItem);
+        // Search by code AND length (the same code can have several
+        // lengths, each with its own stock).
+        final item = await provider.findItem(newItem, tx.length);
         if (item == null) {
-          setState(() => _itemError = 'No product with this code');
+          setState(
+            () => _itemError = 'No product with this code and length',
+          );
           return; // `finally` below still runs and stops the spinner
         }
-        newItemName = (item['name'] ?? newItem).toString();
+        newItemName = item.nameOr(newItem);
       }
       if (newLocation != tx.locationCode &&
           !await provider.locationExists(newLocation)) {
