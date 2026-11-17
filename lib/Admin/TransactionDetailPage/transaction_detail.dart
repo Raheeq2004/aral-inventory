@@ -35,14 +35,12 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
   // TextEditingController = holds (and lets us read/change) a field's text.
   // `late final` = created in initState (we need widget.transaction first).
-  late final TextEditingController _itemCtrl;
   late final TextEditingController _locationCtrl;
   late final TextEditingController _qtyCtrl;
 
   late String _direction; // 'IN' or 'OUT' (the SegmentedButton)
   late String _type; // transaction type CODE (e.g. 'issue_out')
   late String _originalType; // the type when the page opened (normalized)
-  late String _itemName; // shown under the product field
 
   bool _isSaving = false; // true while waiting for Firebase
 
@@ -51,7 +49,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   // null while loading, or if the item wasn't found.
   ItemRow? _itemRow;
   bool _loadingItem = true; // true until the item lookup finishes
-  String? _itemError; // error text from the Firebase checks
   String? _locationError;
 
   // Shortcut: `widget.transaction` → the transaction passed in.
@@ -64,7 +61,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   @override
   void initState() {
     super.initState();
-    _itemCtrl = TextEditingController(text: tx.itemCode);
     _locationCtrl = TextEditingController(text: tx.locationCode);
     _qtyCtrl = TextEditingController(text: tx.quantity.toString());
     _direction = tx.direction;
@@ -72,7 +68,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     // ('purchase_receipt') that matches the direction.
     _originalType = normalizeType(tx.type, tx.direction);
     _type = _originalType;
-    _itemName = tx.itemName;
     _loadItem(); // start loading the item info (doesn't block the page)
   }
 
@@ -87,11 +82,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         tx.length,
       );
       if (!mounted) return; // the page was closed while we were waiting
-      setState(() {
-        _itemRow = row;
-        // Show the real (Arabic) name from the item, if the row has one.
-        if (row?.name != null) _itemName = row!.name!;
-      });
+      setState(() => _itemRow = row);
     } catch (_) {
       // No internet / error → we just show "—" in the chips.
     } finally {
@@ -103,7 +94,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   // Rule: our things first, super.dispose() LAST.
   @override
   void dispose() {
-    _itemCtrl.dispose();
     _locationCtrl.dispose();
     _qtyCtrl.dispose();
     super.dispose();
@@ -111,7 +101,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
   /// Did the admin change anything? (compare the fields with the original)
   bool get _hasChanges =>
-      _itemCtrl.text.trim() != tx.itemCode ||
       _locationCtrl.text.trim().toUpperCase() != tx.locationCode ||
       _qtyCtrl.text.trim() != tx.quantity.toString() ||
       _direction != tx.direction ||
@@ -129,12 +118,10 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
     // 2) Local checks (format, numbers) → validator functions below.
     setState(() {
-      _itemError = null;
       _locationError = null;
     });
     if (!_formKey.currentState!.validate()) return;
 
-    final newItem = _itemCtrl.text.trim();
     final newLocation = _locationCtrl.text.trim().toUpperCase();
     final newQty = int.parse(_qtyCtrl.text.trim()); // safe: validated above
 
@@ -145,19 +132,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
     try {
       // 3) Firebase checks — only for what CHANGED.
-      String newItemName = _itemName;
-      if (newItem != tx.itemCode) {
-        // Search by code AND length (the same code can have several
-        // lengths, each with its own stock).
-        final item = await provider.findItem(newItem, tx.length);
-        if (item == null) {
-          setState(
-            () => _itemError = 'No product with this code and length',
-          );
-          return; // `finally` below still runs and stops the spinner
-        }
-        newItemName = item.nameOr(newItem);
-      }
+      // The PRODUCT can't be changed any more (locked field), so we only
+      // check the location here.
       if (newLocation != tx.locationCode &&
           !await provider.locationExists(newLocation)) {
         setState(() => _locationError = 'This location doesn\'t exist');
@@ -166,8 +142,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
       // 4) Build the updated transaction (copyWith = updated copy).
       final updated = tx.copyWith(
-        itemCode: newItem,
-        itemName: newItemName,
         locationCode: newLocation,
         quantity: newQty,
         direction: _direction,
@@ -190,6 +164,9 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       if (!mounted) return;
       _showMessage('Changes saved');
       Navigator.pop(context); // back to the list (already updated)
+    } on InsufficientStockException catch (e) {
+      // NO NEGATIVE STOCK: the save was blocked, nothing was written.
+      _showMessage(e.message, isError: true);
     } on TimeoutException {
       _showMessage(
         'No connection. The change will be sent when you\'re back online.',
@@ -260,6 +237,9 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       if (!mounted) return;
       _showMessage('Transaction #${tx.transactionId} reversed');
       Navigator.pop(context); // back to the list (already updated)
+    } on InsufficientStockException catch (e) {
+      // NO NEGATIVE STOCK: the reversal was blocked, nothing was written.
+      _showMessage(e.message, isError: true);
     } on TimeoutException {
       _showMessage(
         'No connection. The reversal will be sent when you\'re back online.',
@@ -340,17 +320,6 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
         appBar: AppBar(
           centerTitle: false,
           title: Text('Transaction #${tx.transactionId ?? ''}'),
-          actions: [
-            // ↩ Reverse (A4). Hidden when the transaction can't be reversed
-            // (already reversed, or it IS a reversal). Collection `if`.
-            if (!locked)
-              IconButton(
-                tooltip: 'Reverse transaction',
-                icon: const Icon(Icons.undo),
-                // disabled while saving/reversing (null = disabled)
-                onPressed: _isSaving ? null : _reverse,
-              ),
-          ],
         ),
 
         // The form scrolls, so the keyboard never hides a field.
@@ -375,182 +344,184 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                 _SummaryCard(transaction: tx),
                 const SizedBox(height: 20),
 
-                // ---------------- Product ----------------
-                const _FieldLabel('Product'),
-                TextFormField(
-                  controller: _itemCtrl,
-                  readOnly: readOnly,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.qr_code_2),
-                    hintText: 'Item code',
-                    errorText: _itemError, // from the Firebase check
+                // ============ SECTION 1: ITEM (read only) ============
+                // Grey card + lock icon → "information, you can't change it".
+                const _SectionTitle('ITEM · READ ONLY'),
+                _ItemCard(
+                  itemCode: tx.itemCode,
+                  // Length · In stock · Total weight (live stock from items)
+                  chips: _ItemInfoChips(
+                    length: _formatLength(tx.length),
+                    stock: _loadingItem
+                        ? '…'
+                        : (_itemRow == null
+                              ? '—'
+                              : '${_itemRow!.quantity} pcs'),
+                    weight: _loadingItem
+                        ? '…'
+                        : (_itemRow == null
+                              ? '—'
+                              : '${NumberFormat('#,##0.#').format(_itemRow!.totalWeightKg)} kg'),
                   ),
-                  // validator: returns an error text, or null if OK.
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Enter the item code'
-                      : null,
                 ),
-                              const SizedBox(height: 10),
+                const SizedBox(height: 20),
 
-                // NEW: Length · In stock · Total weight — one row of chips.
-                // Read-only INFO about the item (not editable fields).
-                _ItemInfoChips(
-                  length: _formatLength(tx.length),
-                  stock: _loadingItem
-                      ? '…'
-                      : (_itemRow == null
-                            ? '—'
-                            : '${_itemRow!.quantity} pcs'),
-                  weight: _loadingItem
-                      ? '…'
-                      : (_itemRow == null
-                            ? '—'
-                            : '${NumberFormat('#,##0.#').format(_itemRow!.totalWeightKg)} kg'),
-                ),
-                const SizedBox(height: 16),
+                // ============ SECTION 2: MOVEMENT (editable) ============
+                // White card: ONLY the fields the admin can change.
+                _SectionTitle(locked ? 'MOVEMENT' : 'MOVEMENT · EDITABLE'),
+                _SectionCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // ---------------- IN / OUT ----------------
+                      // SegmentedButton<String>: a row of options, one selected.
+                      SegmentedButton<String>(
+                        segments: const [
+                          ButtonSegment(
+                            value: 'IN',
+                            icon: Icon(Icons.arrow_downward),
+                            label: Text('IN · Store'),
+                          ),
+                          ButtonSegment(
+                            value: 'OUT',
+                            icon: Icon(Icons.arrow_upward),
+                            label: Text('OUT · Withdraw'),
+                          ),
+                        ],
+                        selected: {_direction}, // a Set with the selected value
+                        // null onSelectionChanged = disabled (when read-only)
+                        onSelectionChanged: readOnly
+                            ? null
+                            : (s) => setState(() {
+                                _direction = s.first;
+                                // The type must belong to the new direction.
+                                // If it doesn't, pick the default type for it.
+                                if (!typesFor(_direction)
+                                    .any((t) => t.code == _type)) {
+                                  _type = defaultTypeFor(_direction);
+                                }
+                              }),
+                        style: SegmentedButton.styleFrom(
+                          selectedBackgroundColor: isIn
+                              ? AppTheme.successColor.withValues(alpha: 0.15)
+                              : AppTheme.errorColor.withValues(alpha: 0.12),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
-                // ---------------- Location ----------------
-                const _FieldLabel('Location'),
-                TextFormField(
-                  controller: _locationCtrl,
-                  readOnly: readOnly,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.location_on_outlined),
-                    hintText: 'WH1-B3-02',
-                    errorText: _locationError,
-                  ),
-                  validator: (v) {
-                    final s = (v ?? '').trim().toUpperCase();
-                    // RegExp = a text pattern: WH<digit>-<letter><digit>-<2 digits>
-                    if (!RegExp(r'^WH\d+-[A-Z]\d+-\d{2}$').hasMatch(s)) {
-                      return 'Format: WH1-B3-02';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // ---------------- Quantity ----------------
-                const _FieldLabel('Quantity'),
-                TextFormField(
-                  controller: _qtyCtrl,
-                  readOnly: readOnly,
-                  keyboardType: TextInputType.number, // number keyboard
-                  // Only digits can be typed (no letters, dots or minus).
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.inventory_2_outlined),
-                    suffixText: 'pcs',
-                  ),
-                  validator: (v) {
-                    final n = int.tryParse((v ?? '').trim());
-                    if (n == null || n <= 0) return 'Enter a number above 0';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // ---------------- IN / OUT ----------------
-                // SegmentedButton<String>: a row of options, one selected.
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'IN',
-                      icon: Icon(Icons.arrow_downward),
-                      label: Text('IN · Store'),
-                    ),
-                    ButtonSegment(
-                      value: 'OUT',
-                      icon: Icon(Icons.arrow_upward),
-                      label: Text('OUT · Withdraw'),
-                    ),
-                  ],
-                  selected: {_direction}, // a Set with the selected value
-                  // null onSelectionChanged = disabled (when read-only)
-                  onSelectionChanged: readOnly
-                      ? null
-                      : (s) => setState(() {
-                          _direction = s.first;
-                          // The type must belong to the new direction.
-                          // If it doesn't (e.g. 'صرف' after switching to IN),
-                          // pick the default type for that direction.
-                          if (!typesFor(_direction)
-                              .any((t) => t.code == _type)) {
-                            _type = defaultTypeFor(_direction);
+                      // ---------------- Quantity ----------------
+                      const _FieldLabel('Quantity'),
+                      TextFormField(
+                        controller: _qtyCtrl,
+                        readOnly: readOnly,
+                        keyboardType: TextInputType.number, // number keyboard
+                        // Only digits can be typed (no letters, dots or minus).
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.inventory_2_outlined),
+                          suffixText: 'pcs',
+                        ),
+                        validator: (v) {
+                          final n = int.tryParse((v ?? '').trim());
+                          if (n == null || n <= 0) {
+                            return 'Enter a number above 0';
                           }
-                        }),
-                  style: SegmentedButton.styleFrom(
-                    selectedBackgroundColor: isIn
-                        ? AppTheme.successColor.withValues(alpha: 0.15)
-                        : AppTheme.errorColor.withValues(alpha: 0.12),
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ---------------- Transaction type ----------------
+                      const _FieldLabel('Transaction type'),
+                      // Directionality(rtl) = lay this field out right-to-left,
+                      // so the Arabic text and the arrow sit on the right sides.
+                      Directionality(
+                        textDirection: TextDirection.rtl,
+                        child: DropdownButtonFormField<String>(
+                          // key: when the direction (or type) changes, Flutter
+                          // rebuilds this field so it shows the new list/value.
+                          key: ValueKey('$_direction-$_type'),
+                          initialValue: _type, // the selected type code
+                          isExpanded: true, // long Arabic labels don't overflow
+                          decoration: const InputDecoration(
+                            prefixIcon: Icon(Icons.category_outlined),
+                          ),
+                          // value = the CODE (saved), child = the Arabic LABEL.
+                          // A reversal / retired type is added so the current
+                          // value is always in the list.
+                          items:
+                              [
+                                    ...typesFor(_direction),
+                                    if (_type == kReversalType.code)
+                                      kReversalType,
+                                    if (isRetiredType(_type))
+                                      typeByCode(_type)!,
+                                  ]
+                                  .map(
+                                    (t) => DropdownMenuItem<String>(
+                                      value: t.code,
+                                      child: Text(t.label),
+                                    ),
+                                  )
+                                  .toList(),
+                          // null onChanged = disabled (read-only / saving)
+                          onChanged: (readOnly || _type == kReversalType.code)
+                              ? null
+                              : (code) {
+                                  if (code != null) {
+                                    setState(() => _type = code);
+                                  }
+                                },
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      // ---------------- Location ----------------
+                      const _FieldLabel('Location'),
+                      TextFormField(
+                        controller: _locationCtrl,
+                        readOnly: readOnly,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: InputDecoration(
+                          prefixIcon: const Icon(Icons.location_on_outlined),
+                          hintText: 'WH1-B3-02',
+                          errorText: _locationError,
+                        ),
+                        validator: (v) {
+                          final s = (v ?? '').trim().toUpperCase();
+                          // RegExp: WH<digits>-<letter><digits>-<2 digits>
+                          if (!RegExp(r'^WH\d+-[A-Z]\d+-\d{2}$').hasMatch(s)) {
+                            return 'Format: WH1-B3-02';
+                          }
+                          return null;
+                        },
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
 
-                // ---------------- Transaction type (NEW) ----------------
-                const _FieldLabel('Transaction type'),
-                // Directionality(rtl) = lay this field out right-to-left,
-                // so the Arabic text and the arrow sit on the correct sides.
-                Directionality(
-                  textDirection: TextDirection.rtl,
-                  child: DropdownButtonFormField<String>(
-                    // key: ValueKey(...) → when the direction (or type)
-                    // changes, Flutter rebuilds this field from scratch so it
-                    // shows the new list and the new value.
-                    key: ValueKey('$_direction-$_type'),
-                    initialValue: _type, // the selected type code
-                    isExpanded: true, // long Arabic labels don't overflow
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.category_outlined),
-                    ),
-                    // One DropdownMenuItem per type of the current direction.
-                    // value = the CODE (saved), child = the Arabic LABEL (shown).
-                    // (A reversal row keeps its special type, shown but locked.
-                    //  An OLD transaction with a retired type keeps showing it,
-                    //  so the dropdown always contains the current value.)
-                    items:
-                        [
-                              ...typesFor(_direction),
-                              if (_type == kReversalType.code) kReversalType,
-                              if (isRetiredType(_type)) typeByCode(_type)!,
-                            ]
-                            .map(
-                              (t) => DropdownMenuItem<String>(
-                                value: t.code,
-                                child: Text(t.label),
-                              ),
-                            )
-                            .toList(),
-                    // null onChanged = disabled (read-only / saving)
-                    onChanged: (readOnly || _type == kReversalType.code)
-                        ? null
-                        : (code) {
-                            if (code != null) setState(() => _type = code);
-                          },
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // ---------------- Worker (read-only) ----------------
-                // Who scanned it never changes → it's the audit trail.
-                const _FieldLabel('Worker'),
-                TextFormField(
-                  initialValue: tx.stockKeeperId,
-                  readOnly: true,
-                  enabled: false,
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.person_outline),
-                  ),
-                ),
-
-                // "Edited by …" line, only if it was edited before.
+                // "Last edited by …" line, only if it was edited before.
+                // (Who logged it is already in the summary card at the top.)
                 if (tx.editedBy != null && tx.editedAt != null) ...[
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Text(
                     'Last edited by ${tx.editedBy} · '
                     '${DateFormat('d MMM y, HH:mm').format(tx.editedAt!.toLocal())}',
                     style: theme.textTheme.bodySmall,
+                  ),
+                ],
+
+                // ============ SECTION 3: ACTIONS (reverse) ============
+                // Only when the transaction CAN be reversed (not locked).
+                // `...[ ]` (spread) adds several widgets at once.
+                if (!locked) ...[
+                  const SizedBox(height: 20),
+                  const _SectionTitle('ACTIONS'),
+                  _ReverseCard(
+                    // null = disabled while saving/reversing
+                    onPressed: _isSaving ? null : _reverse,
                   ),
                 ],
               ],
@@ -715,6 +686,146 @@ class _ReversedBanner extends StatelessWidget {
                   const TextSpan(text: ' · read only'),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Small grey title above a section: "ITEM · READ ONLY", "ACTIONS"…
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.8, // a bit of space between letters → "label" look
+          color: AppTheme.textColorSecondary,
+        ),
+      ),
+    );
+  }
+}
+
+/// A white rounded card with a thin border (the editable section).
+class _SectionCard extends StatelessWidget {
+  const _SectionCard({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.borderColor),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// The GREY read-only card: item code + lock icon, then the 3 chips.
+class _ItemCard extends StatelessWidget {
+  const _ItemCard({required this.itemCode, required this.chips});
+  final String itemCode;
+  final Widget chips; // the Length · In stock · Total weight row
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9), // light grey = "read only"
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppTheme.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.qr_code_2, color: AppTheme.textColorSecondary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  itemCode,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.textColorPrimary,
+                  ),
+                ),
+              ),
+              // lock = "can't be changed"
+              const Icon(
+                Icons.lock_outline,
+                size: 18,
+                color: AppTheme.textColorSecondary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          chips,
+        ],
+      ),
+    );
+  }
+}
+
+/// The peach "Reverse this transaction" card at the end of the page.
+class _ReverseCard extends StatelessWidget {
+  const _ReverseCard({required this.onPressed});
+
+  /// What happens on tap. null → the button is disabled (greyed out).
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.secondaryContainer.withValues(alpha: 0.5), // soft peach
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.secondary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            'Reverse this transaction',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSecondaryContainer,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Adds an opposite entry to undo it. The original stays in the log.',
+            style: TextStyle(fontSize: 13, color: scheme.onSecondaryContainer),
+          ),
+          const SizedBox(height: 12),
+          // OutlinedButton in orange: visible, but not as strong as Save.
+          OutlinedButton.icon(
+            onPressed: onPressed,
+            icon: const Icon(Icons.undo),
+            label: const Text('Reverse'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: scheme.secondary, // burnt orange text + icon
+              side: BorderSide(color: scheme.secondary, width: 1.5),
+              backgroundColor: AppTheme.surfaceColor,
             ),
           ),
         ],
