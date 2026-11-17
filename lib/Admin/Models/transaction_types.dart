@@ -15,7 +15,7 @@
 //   If someone later changes the Arabic wording, old transactions still
 //   work, because Firebase only has the code (e.g. "issue_out").
 //
-// NOTE: sample list for now — confirm the real types with ARAL later.
+// The list below is the one ARAL's manager gave us (Nov 2026).
 // =====================================================================
 
 /// One transaction type. A small, immutable class (all fields `final`).
@@ -33,22 +33,39 @@ class TransactionType {
 }
 
 // ---------------------------------------------------------------------
-// The list (Arabic labels)
+// The list (Arabic labels) — from ARAL's manager.
+// Where a type kept its MEANING, we kept its old CODE and only changed the
+// Arabic label (e.g. 'sales_delivery' now shows «مبيعات»). That way the
+// transactions already saved in Firebase still match, with no migration.
 // ---------------------------------------------------------------------
 const List<TransactionType> kTransactionTypes = [
   // ---------- IN (وارد) ----------
-  TransactionType(code: 'purchase_receipt', label: 'استلام مشتريات', direction: 'IN'),
-  TransactionType(code: 'return_in', label: 'مرتجع من قسم / مشروع', direction: 'IN'),
-  TransactionType(code: 'transfer_in', label: 'تحويل وارد', direction: 'IN'),
+  TransactionType(code: 'return_in', label: 'مرتجع على', direction: 'IN'),
+  TransactionType(code: 'packaging_in', label: 'إدخال تغليف', direction: 'IN'),
+  TransactionType(code: 'services_in', label: 'خدمات', direction: 'IN'),
+  TransactionType(code: 'warehouse_in', label: 'استلام مستودع آخر', direction: 'IN'),
+  TransactionType(code: 'adjustment_in', label: 'تسوية جرد', direction: 'IN'),
   TransactionType(code: 'opening_balance', label: 'رصيد افتتاحي', direction: 'IN'),
-  TransactionType(code: 'adjustment_in', label: 'تسوية جرد (زيادة)', direction: 'IN'),
 
   // ---------- OUT (صادر) ----------
-  TransactionType(code: 'issue_out', label: 'صرف لقسم / مشروع', direction: 'OUT'),
-  TransactionType(code: 'sales_delivery', label: 'تسليم لعميل', direction: 'OUT'),
+  TransactionType(code: 'sales_delivery', label: 'مبيعات', direction: 'OUT'),
   TransactionType(code: 'transfer_out', label: 'تحويل صادر', direction: 'OUT'),
+  TransactionType(code: 'issue_out', label: 'صرف قسم', direction: 'OUT'),
+  TransactionType(code: 'damaged', label: 'تالف', direction: 'OUT'),
+  TransactionType(code: 'transfer', label: 'تحويل', direction: 'OUT'),
+  TransactionType(code: 'warehouse_out', label: 'تحويل مستودع آخر', direction: 'OUT'),
+];
+
+// ---------------------------------------------------------------------
+// RETIRED types: they were in our first list but NOT in the manager's.
+// They are NOT offered in the dropdown any more, but OLD transactions that
+// use them still show their original Arabic name (we never rewrite
+// history). If the admin edits such a transaction, they can pick a new type.
+// ---------------------------------------------------------------------
+const List<TransactionType> kRetiredTypes = [
+  TransactionType(code: 'purchase_receipt', label: 'استلام مشتريات', direction: 'IN'),
+  TransactionType(code: 'transfer_in', label: 'تحويل وارد', direction: 'IN'),
   TransactionType(code: 'return_out', label: 'مرتجع للمورد', direction: 'OUT'),
-  TransactionType(code: 'damaged', label: 'تالف / هالك', direction: 'OUT'),
   TransactionType(code: 'adjustment_out', label: 'تسوية جرد (نقص)', direction: 'OUT'),
 ];
 
@@ -82,7 +99,7 @@ const Map<String, Map<String, String>> _legacyToCode = {
   'damaged': {'OUT': 'damaged'},
   'damaged / defective': {'OUT': 'damaged'},
   'sales fulfillment': {'OUT': 'sales_delivery'},
-  // No exact match in our list → closest: "صرف لقسم / مشروع"
+  // No exact match in our list → closest: «صرف قسم»
   'sample / promotional': {'OUT': 'issue_out'},
 };
 
@@ -91,15 +108,28 @@ const Map<String, Map<String, String>> _legacyToCode = {
 // imports this one, no object needed).
 // ---------------------------------------------------------------------
 
-/// All types for one direction → used to fill the dropdown.
+/// All ACTIVE types for one direction → used to fill the dropdown.
 /// `where` keeps only the matching ones; `toList()` makes a List.
 List<TransactionType> typesFor(String direction) =>
     kTransactionTypes.where((t) => t.direction == direction).toList();
 
-/// The default type for a direction (the most common one):
-/// IN → استلام مشتريات · OUT → صرف لقسم / مشروع
-String defaultTypeFor(String direction) =>
-    direction == 'OUT' ? 'issue_out' : 'purchase_receipt';
+/// Finds a type by its code in ALL lists (active, retired, reversal).
+/// Returns null if the code is unknown.
+TransactionType? typeByCode(String code) {
+  if (code == kReversalType.code) return kReversalType;
+  // `...` (spread) joins the two lists into one to search them together.
+  for (final t in [...kTransactionTypes, ...kRetiredTypes]) {
+    if (t.code == code) return t;
+  }
+  return null;
+}
+
+/// true if [code] is a retired type (shown for old data, not selectable).
+bool isRetiredType(String code) => kRetiredTypes.any((t) => t.code == code);
+
+/// The default type for a direction = the FIRST one in the manager's list:
+/// IN → مرتجع على · OUT → مبيعات
+String defaultTypeFor(String direction) => typesFor(direction).first.code;
 
 /// Turns ANY stored value (new code, old English text, or empty) into a
 /// valid code for this direction.
@@ -107,16 +137,18 @@ String normalizeType(String? stored, String direction) {
   final value = (stored ?? '').trim();
   final lower = value.toLowerCase();
 
-  // 1) Already a valid code for this direction? keep it.
-  if (typesFor(direction).any((t) => t.code == value)) return value;
+  // A code is OK if it exists (active or retired) AND fits the direction.
+  bool fits(String code) => [...kTransactionTypes, ...kRetiredTypes]
+      .any((t) => t.code == code && t.direction == direction);
+
+  // 1) Already a valid code (or the reversal)? keep it.
+  if (fits(value)) return value;
   if (value == kReversalType.code) return value;
 
   // 2) Old English value? translate it.
   // `?[direction]` = look inside only if the old name was found (null-safe)
   final mapped = _legacyToCode[lower]?[direction];
-  if (mapped != null && typesFor(direction).any((t) => t.code == mapped)) {
-    return mapped;
-  }
+  if (mapped != null && fits(mapped)) return mapped;
 
   // 3) Unknown, empty, or doesn't match the direction → use the default.
   return defaultTypeFor(direction);
@@ -125,28 +157,17 @@ String normalizeType(String? stored, String direction) {
 /// The Arabic label for a stored value (used by lists, cards, export).
 String typeLabel(String? stored, String direction) {
   final code = normalizeType(stored, direction);
-  if (code == kReversalType.code) return kReversalType.label;
-  // firstWhere finds the first match; orElse is used if none is found.
-  return kTransactionTypes
-      .firstWhere(
-        (t) => t.code == code,
-        orElse: () => const TransactionType(code: '', label: '—', direction: ''),
-      )
-      .label;
+  return typeByCode(code)?.label ?? '—';
 }
 
-/// The Arabic label for a CODE (e.g. 'issue_out' → 'صرف لقسم / مشروع').
+/// The Arabic label for a CODE (e.g. 'issue_out' → 'صرف قسم').
 /// Used by the Reports page chips.
-String labelForCode(String code) {
-  if (code == kReversalType.code) return kReversalType.label;
-  for (final t in kTransactionTypes) {
-    if (t.code == code) return t.label;
-  }
-  return code;
-}
+String labelForCode(String code) => typeByCode(code)?.label ?? code;
 
-/// All codes in display order (IN types, OUT types, then reversal).
+/// All codes in display order (active IN + OUT, retired, then reversal).
+/// Reports only shows the ones that actually appear in the data.
 List<String> get allTypeCodes => [
   ...kTransactionTypes.map((t) => t.code),
+  ...kRetiredTypes.map((t) => t.code),
   kReversalType.code,
 ];

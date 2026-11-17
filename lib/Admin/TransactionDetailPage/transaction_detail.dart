@@ -506,11 +506,14 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                     ),
                     // One DropdownMenuItem per type of the current direction.
                     // value = the CODE (saved), child = the Arabic LABEL (shown).
-                    // (A reversal row keeps its special type, shown but locked.)
+                    // (A reversal row keeps its special type, shown but locked.
+                    //  An OLD transaction with a retired type keeps showing it,
+                    //  so the dropdown always contains the current value.)
                     items:
                         [
                               ...typesFor(_direction),
                               if (_type == kReversalType.code) kReversalType,
+                              if (isRetiredType(_type)) typeByCode(_type)!,
                             ]
                             .map(
                               (t) => DropdownMenuItem<String>(
