@@ -1,5 +1,6 @@
 import 'package:aral_project/Admin/providers/filter_provider.dart';
 import 'package:aral_project/Admin/providers/transaction_data.dart';
+import 'package:aral_project/Landing/landing_page.dart';
 import 'package:aral_project/StockKeeper/Step3Page/quantity_page.dart';
 import 'package:aral_project/StockKeeper/worker_routing.dart';
 import 'package:aral_project/Theme/theme.dart';
@@ -38,11 +39,13 @@ class MyApp extends StatelessWidget {
       title: 'Aral Inventory',
       theme: AppTheme.lightTheme,
       //worker routing:
-      initialRoute: '/quantity', // Must match an entry in routes map
-      routes: {
-        '/quantity': (context) =>
-            const WorkerRouting(title: 'Quantity', child: QuantityPage()),
-      },
+      // initialRoute: '/LandingPage', // Must match an entry in routes map
+      // routes: {
+      //   '/LandingPage': (context) => const LandingPage(),
+      //   '/quantity': (context) =>
+      //       const WorkerRouting(title: 'Quantity', child: QuantityPage()),
+      // },
+      home: const LandingPage(),
     );
   }
 }
