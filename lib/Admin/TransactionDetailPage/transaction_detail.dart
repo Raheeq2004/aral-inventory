@@ -319,7 +319,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       child: Scaffold(
         appBar: AppBar(
           centerTitle: false,
-          title: Text('Transaction #${tx.transactionId ?? ''}'),
+          title: Text('Transaction #${tx.numericId}'),
         ),
 
         // The form scrolls, so the keyboard never hides a field.
@@ -860,7 +860,9 @@ class _ItemInfoChips extends StatelessWidget {
     // so the three always sit side by side (never wrap to a new line).
     return Row(
       children: [
-        Expanded(child: _InfoChip(label: 'Length', value: length)),
+        Expanded(
+          child: _InfoChip(label: 'Length', value: length),
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: _InfoChip(
@@ -870,7 +872,9 @@ class _ItemInfoChips extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 8),
-        Expanded(child: _InfoChip(label: 'Total weight', value: weight)),
+        Expanded(
+          child: _InfoChip(label: 'Total weight', value: weight),
+        ),
       ],
     );
   }

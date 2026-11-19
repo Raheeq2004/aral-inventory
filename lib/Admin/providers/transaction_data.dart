@@ -5,6 +5,15 @@ import 'package:aral_project/Admin/Models/transaction_types.dart'; // kReversalT
 import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 
+class InsufficientStockException implements Exception {
+  const InsufficientStockException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class TransactionData extends ChangeNotifier {
   List<TransactionModel> transactionDataList = [];
   bool isLoading = false;
@@ -310,11 +319,32 @@ class TransactionData extends ChangeNotifier {
       //      IN 20  → OUT 20: −20 − 20 = −40
       final delta = updated.stockEffect - original.stockEffect;
       if (delta != 0) {
+        final resultingQuantity = newRow.quantity + delta;
+        if (resultingQuantity < 0) {
+          throw InsufficientStockException(
+            'Insufficient stock for ${updated.itemName}. '
+            'Available: ${newRow.quantity}, required: ${-delta}',
+          );
+        }
         changes['items/${newRow.key}/Quantity'] = ServerValue.increment(delta);
       }
     } else {
       // Different row: undo the effect on the OLD row,
       // apply the effect on the NEW row.
+      final oldResult = oldRow.quantity - original.stockEffect;
+      if (oldResult < 0) {
+        throw InsufficientStockException(
+          'Insufficient stock for ${original.itemName}. '
+          'Available: ${oldRow.quantity}, required: ${original.stockEffect}',
+        );
+      }
+      final newResult = newRow.quantity + updated.stockEffect;
+      if (newResult < 0) {
+        throw InsufficientStockException(
+          'Insufficient stock for ${updated.itemName}. '
+          'Available: ${newRow.quantity}, required: ${-updated.stockEffect}',
+        );
+      }
       changes['items/${oldRow.key}/Quantity'] = ServerValue.increment(
         -original.stockEffect,
       );
@@ -394,6 +424,13 @@ class TransactionData extends ChangeNotifier {
 
     // Find the item's row (code + length) BEFORE writing anything.
     final row = await _requireItem(original.itemCode, original.length);
+    final resultingQuantity = row.quantity + reversal.stockEffect;
+    if (resultingQuantity < 0) {
+      throw InsufficientStockException(
+        'Insufficient stock for ${original.itemName}. '
+        'Available: ${row.quantity}, required: ${original.quantity}',
+      );
+    }
 
     final Map<String, Object?> changes = {
       // 1) the new transaction (toJson = the model as a Map)

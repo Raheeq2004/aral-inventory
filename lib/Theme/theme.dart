@@ -1,6 +1,5 @@
- 
 import 'package:flutter/material.dart';
- 
+
 /// `class AppTheme` only groups things together.
 /// Everything inside is `static` → it belongs to the CLASS itself,
 /// so we use it WITHOUT creating an object:  AppTheme.primaryColor
@@ -11,29 +10,33 @@ class AppTheme {
   // shared by the whole app.
   // Color(0xFF1F3A5F): 0xFF = fully opaque, 1F3A5F = the hex color.
   // -------------------------------------------------------------------
- 
+
   // --- Main (navy) ---
   static const Color primaryColor = Color(0xFF1F3A5F); // navy (matches Figma)
   static const Color primaryContainer = Color(0xFFD6E3F7); // light blue tint
-  static const Color onPrimaryContainer = Color(0xFF0B1F3A); // text on light blue
- 
+  static const Color onPrimaryContainer = Color(
+    0xFF0B1F3A,
+  ); // text on light blue
+
   // --- Accent (burnt orange) ---
   static const Color secondaryColor = Color(0xFFC2531C); // burnt orange
   static const Color secondaryContainer = Color(0xFFFCE1D0); // light peach
   static const Color onSecondaryContainer = Color(0xFF7A2E0E); // text on peach
- 
+
   // --- Backgrounds & text (unchanged) ---
-  static const Color backgroundColor = Color(0xFFF8FAFC); // light off-white/grey
+  static const Color backgroundColor = Color(
+    0xFFF8FAFC,
+  ); // light off-white/grey
   static const Color surfaceColor = Colors.white;
   static const Color textColorPrimary = Color(0xFF0F172A);
   static const Color textColorSecondary = Color(0xFF64748B);
   static const Color borderColor = Color(0xFFE2E8F0);
- 
+
   // --- Status colors (meaning, not decoration) ---
   static const Color successColor = Color(0xFF1E7A3C); // IN, synced, online
   static const Color errorColor = Color(0xFFBA1A1A); // OUT, errors, offline
-  
-    // Dark amber → text + icons on yellow backgrounds (readable, not bright).
+
+  // Dark amber → text + icons on yellow backgrounds (readable, not bright).
   static const Color warningColor = Color(0xFF7A6000);
   // Soft cream background (was #FFF0B8, too bright next to the red card).
   static const Color warningContainer = Color(0xFFFFF8E6);
@@ -41,7 +44,7 @@ class AppTheme {
   // on the light page background (#F8FAFC) without being loud.
   static const Color warningBorder = Color(0xFFF2DFA6);
 
-    // --- Gradients (match the "Gradients" row in Figma) ---
+  // --- Gradients (match the "Gradients" row in Figma) ---
   //
   // LinearGradient = a smooth blend between colours along a line.
   //   begin / end → the direction of that line.
@@ -71,7 +74,7 @@ class AppTheme {
     colors: [Color(0xFFFFE3CC), Color(0xFFF9BE8E), Color(0xFFF3A26C)],
     stops: [0.0, 0.65, 1.0],
   );
- 
+
   // -------------------------------------------------------------------
   // 2) THE THEME
   // `static ThemeData get lightTheme` is a GETTER: it looks like a
@@ -84,7 +87,6 @@ class AppTheme {
       brightness: Brightness.light,
       primaryColor: primaryColor,
       scaffoldBackgroundColor: backgroundColor, // every Scaffold's background
- 
       // ColorScheme = the named color ROLES Material widgets use
       // automatically (buttons use `primary`, chips use `secondaryContainer`…).
       // fromSeed builds a full matching palette from one color, then we
@@ -102,7 +104,7 @@ class AppTheme {
         surface: surfaceColor,
         error: errorColor,
       ),
- 
+
       // --- AppBar: white, navy-dark text, no shadow ---
       appBarTheme: const AppBarTheme(
         backgroundColor: surfaceColor,
@@ -115,7 +117,7 @@ class AppTheme {
           fontWeight: FontWeight.bold,
         ),
       ),
- 
+
       // --- Cards: white with a thin border, no shadow ---
       cardTheme: CardThemeData(
         color: surfaceColor,
@@ -125,7 +127,7 @@ class AppTheme {
           side: const BorderSide(color: borderColor, width: 1),
         ),
       ),
- 
+
       // --- Main buttons: NAVY (orange is only for small accents) ---
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -143,14 +145,14 @@ class AppTheme {
           foregroundColor: Colors.white,
         ),
       ),
- 
+
       // --- Floating action button (e.g. Export Excel): soft peach ---
       floatingActionButtonTheme: const FloatingActionButtonThemeData(
         backgroundColor: secondaryContainer,
         foregroundColor: onSecondaryContainer,
         elevation: 2,
       ),
- 
+
       // --- Chips (filters): selected = peach, like Figma ---
       chipTheme: ChipThemeData(
         selectedColor: secondaryContainer,
@@ -158,7 +160,7 @@ class AppTheme {
         side: const BorderSide(color: borderColor),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
- 
+
       // --- Bottom navigation bar (admin): orange = active tab ---
       // Before, these colors were hard-coded inside admin_routing.dart.
       // Now they live HERE, so the bar follows the theme automatically.
@@ -170,12 +172,12 @@ class AppTheme {
         unselectedIconTheme: IconThemeData(size: 24),
         type: BottomNavigationBarType.fixed,
       ),
- 
+
       // --- Loading spinners: navy ---
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: primaryColor,
       ),
- 
+
       // --- Text fields: thin border, ORANGE border when focused ---
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
@@ -198,7 +200,7 @@ class AppTheme {
         ),
         labelStyle: const TextStyle(color: textColorSecondary),
       ),
- 
+
       // --- Text styles (unchanged) ---
       textTheme: const TextTheme(
         displayLarge: TextStyle(
