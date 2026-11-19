@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:aral_project/Admin/Models/transactions_model.dart';
-import 'package:aral_project/Admin/Models/transaction_types.dart'; // Arabic type labels
 import 'package:aral_project/Theme/theme.dart';
 import 'package:excel/excel.dart' as xl;
 import 'package:file_saver/file_saver.dart';
@@ -12,24 +11,45 @@ import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// build the .xlsx file
+/// One line of the "stock on a date" report: how many units of one item
+/// were in one location at the end of the chosen day.
+class StockRow {
+  final String itemCode;
+  final String itemName;
+  final String locationCode;
+  int quantity;
+
+  StockRow({
+    required this.itemCode,
+    required this.itemName,
+    required this.locationCode,
+    required this.quantity,
+  });
+}
+
+/// build the .xlsx files
 class ExcelExportService {
   ExcelExportService._();
 
   /// Location codes look like "WH1-A1-01" (or "WH1 / A1 / 01").
-  /// Warehouse = the first part, split on dashes, slashes or spaces.
-  static String warehouseOf(String locationCode) {
+  /// Split on dashes, slashes or spaces -> [warehouse, rack, shelf].
+  /// Always returns 3 items ('' when a part is missing).
+  static List<String> locationParts(String locationCode) {
     final parts = locationCode
         .trim()
         .split(RegExp(r'[\s/\-]+'))
-        .where((p) => p.isNotEmpty);
-    return parts.isEmpty ? '' : parts.first.toUpperCase();
+        .where((p) => p.isNotEmpty)
+        .map((p) => p.toUpperCase())
+        .toList();
+    return [for (var i = 0; i < 3; i++) i < parts.length ? parts[i] : ''];
   }
 
+  static String warehouseOf(String locationCode) =>
+      locationParts(locationCode)[0];
+
   /// transactions_17-10-2026.xlsx
-  /// transactions_01-10_17-10-2026.xlsx
+  /// transactions_01-10-2026_17-10-2026.xlsx   (year on both dates)
   static String fileNameFor({DateTime? from, DateTime? to}) {
-    final day = DateFormat('dd-MM');
     final full = DateFormat('dd-MM-yyyy');
     if (from == null || to == null) {
       return 'transactions_${full.format(DateTime.now())}.xlsx';
@@ -37,31 +57,74 @@ class ExcelExportService {
     final sameDay =
         from.year == to.year && from.month == to.month && from.day == to.day;
     if (sameDay) return 'transactions_${full.format(to)}.xlsx';
-    return 'transactions_${day.format(from)}_${full.format(to)}.xlsx';
+    return 'transactions_${full.format(from)}_${full.format(to)}.xlsx';
+  }
+
+  /// stock_17-10-2026.xlsx
+  static String stockFileNameFor(DateTime asOf) =>
+      'stock_${DateFormat('dd-MM-yyyy').format(asOf)}.xlsx';
+
+  /// Type exactly as it is written in the db, just tidied:
+  /// "issue_out" -> "Issue Out", "Purchase Receipt" stays "Purchase Receipt".
+  static String englishType(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty) return '';
+    if (t.contains('_') || t == t.toLowerCase()) {
+      return t
+          .split(RegExp(r'[_\s]+'))
+          .where((w) => w.isNotEmpty)
+          .map((w) => w[0].toUpperCase() + w.substring(1))
+          .join(' ');
+    }
+    return t;
+  }
+
+  /// Stock at the END of the day [asOf]:
+  /// for every item + location, add up all IN and subtract all OUT
+  /// up to that day. Reversals are normal rows (opposite direction),
+  /// so they cancel out by themselves. Lines with 0 units are left out.
+  static List<StockRow> stockAsOf(
+    Iterable<TransactionModel> transactions,
+    DateTime asOf,
+  ) {
+    final endExclusive = DateTime(asOf.year, asOf.month, asOf.day + 1);
+    final lines = <String, StockRow>{};
+
+    for (final tx in transactions) {
+      if (!tx.timestamp.toLocal().isBefore(endExclusive)) continue;
+      final signed = tx.direction.toUpperCase() == 'IN'
+          ? tx.quantity
+          : -tx.quantity;
+      final key = '${tx.itemCode}|${tx.locationCode}';
+      final line = lines.putIfAbsent(
+        key,
+        () => StockRow(
+          itemCode: tx.itemCode,
+          itemName: tx.itemName,
+          locationCode: tx.locationCode,
+          quantity: 0,
+        ),
+      );
+      line.quantity += signed;
+    }
+
+    return lines.values.where((l) => l.quantity != 0).toList()..sort((a, b) {
+      final byItem = a.itemCode.compareTo(b.itemCode);
+      return byItem != 0 ? byItem : a.locationCode.compareTo(b.locationCode);
+    });
   }
 
   /// creates excel file; returns path on mobile/desktop, null on web
-  static Future<String?> _buildFile(
-    List<TransactionModel> transactions,
-    String fileName,
-  ) async {
+  static Future<String?> _buildFile({
+    required String fileName,
+    required List<String> headers,
+    required List<List<xl.CellValue>> rows,
+    Set<int> wideColumns = const {},
+  }) async {
     final book = xl.Excel.createExcel();
-    const sheetName = 'Transactions';
+    const sheetName = 'Report';
     book.rename('Sheet1', sheetName);
     final sheet = book[sheetName];
-
-    final headers = [
-      'Date & time',
-      'Item code',
-      'Product name',
-      'Location',
-      'Warehouse',
-      'Worker',
-      'Direction',
-      'Quantity',
-      'Type',
-      'Notes', // Reversed / Reversal of #…
-    ];
 
     final headerStyle = xl.CellStyle(
       bold: true,
@@ -74,35 +137,11 @@ class ExcelExportService {
       );
       cell.value = xl.TextCellValue(headers[c]);
       cell.cellStyle = headerStyle;
-      sheet.setColumnWidth(c, c == 2 || c == 3 || c == 8 || c == 9 ? 28 : 16);
+      sheet.setColumnWidth(c, wideColumns.contains(c) ? 28 : 16);
     }
 
-    final dateFmt = DateFormat('yyyy-MM-dd HH:mm');
-    final sorted = [...transactions]
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
-
-    for (final tx in sorted) {
-      final isIn = tx.direction.toUpperCase() == 'IN';
-      sheet.appendRow([
-        xl.TextCellValue(dateFmt.format(tx.timestamp.toLocal())),
-        xl.TextCellValue(tx.itemCode),
-        xl.TextCellValue(tx.itemName),
-        xl.TextCellValue(tx.locationCode),
-        xl.TextCellValue(warehouseOf(tx.locationCode)),
-        xl.TextCellValue(tx.stockKeeperId),
-        xl.TextCellValue(tx.direction.toUpperCase()),
-        xl.IntCellValue(isIn ? tx.quantity : -tx.quantity),
-        // Arabic type from the shared list (old names are translated too)
-        xl.TextCellValue(typeLabel(tx.type, tx.direction.toUpperCase())),
-        // Notes: is this row reversed, or is it a reversal?
-        xl.TextCellValue(
-          tx.reversed
-              ? 'Reversed${tx.reversalId != null ? ' (by #${tx.reversalId})' : ''}'
-              : tx.isReversal
-              ? 'Reversal of #${tx.reversalOf ?? '—'}'
-              : '',
-        ),
-      ]);
+    for (final row in rows) {
+      sheet.appendRow(row);
     }
 
     final bytes = book.encode();
@@ -129,17 +168,109 @@ class ExcelExportService {
     return file.path;
   }
 
+  /// Transaction log (date only, no time, no type column).
   static Future<bool> exportAndNotify({
     required BuildContext context,
     required List<TransactionModel> transactions,
     DateTime? from,
     DateTime? to,
+  }) {
+    final dateFmt = DateFormat('yyyy-MM-dd');
+    final sorted = [...transactions]
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+
+    final rows = <List<xl.CellValue>>[
+      for (final tx in sorted)
+        [
+          xl.TextCellValue(dateFmt.format(tx.timestamp.toLocal())),
+          xl.TextCellValue(tx.itemCode),
+          xl.TextCellValue(tx.itemName),
+          xl.TextCellValue(tx.locationCode),
+          xl.TextCellValue(warehouseOf(tx.locationCode)),
+          xl.TextCellValue(tx.stockKeeperId),
+          xl.TextCellValue(tx.direction.toUpperCase()),
+          xl.IntCellValue(
+            tx.direction.toUpperCase() == 'IN' ? tx.quantity : -tx.quantity,
+          ),
+          xl.TextCellValue(englishType(tx.type)),
+          // Notes: is this row reversed, or is it a reversal?
+          xl.TextCellValue(
+            tx.reversed
+                ? 'Reversed${tx.reversalId != null ? ' (by #${tx.reversalId})' : ''}'
+                : tx.isReversal
+                ? 'Reversal of #${tx.reversalOf ?? '—'}'
+                : '',
+          ),
+        ],
+    ];
+
+    return _saveAndNotify(
+      context: context,
+      fileName: fileNameFor(from: from, to: to),
+      headers: const [
+        'Date',
+        'Item code',
+        'Product name',
+        'Location',
+        'Warehouse',
+        'Worker',
+        'Direction',
+        'Quantity',
+        'Type',
+        'Notes',
+      ],
+      rows: rows,
+      wideColumns: {2, 3, 8, 9},
+    );
+  }
+
+  /// Stock on a date (one line per item + location).
+  static Future<bool> exportStockAndNotify({
+    required BuildContext context,
+    required List<StockRow> rows,
+    required DateTime asOf,
+  }) {
+    return _saveAndNotify(
+      context: context,
+      fileName: stockFileNameFor(asOf),
+      headers: const [
+        'Item code',
+        'Product name',
+        'Location',
+        'Warehouse',
+        'Net movement (IN - OUT)', // NOT real stock yet
+      ],
+      rows: [
+        for (final r in rows)
+          [
+            xl.TextCellValue(r.itemCode),
+            xl.TextCellValue(r.itemName),
+            xl.TextCellValue(r.locationCode),
+            xl.TextCellValue(warehouseOf(r.locationCode)),
+            xl.IntCellValue(r.quantity),
+          ],
+      ],
+      wideColumns: {1, 2},
+    );
+  }
+
+  /// Builds the file, then shows the "<file> saved  OPEN" pop-up.
+  static Future<bool> _saveAndNotify({
+    required BuildContext context,
+    required String fileName,
+    required List<String> headers,
+    required List<List<xl.CellValue>> rows,
+    Set<int> wideColumns = const {},
   }) async {
     final messenger = ScaffoldMessenger.of(context);
-    final fileName = fileNameFor(from: from, to: to);
 
     try {
-      final path = await _buildFile(transactions, fileName);
+      final path = await _buildFile(
+        fileName: fileName,
+        headers: headers,
+        rows: rows,
+        wideColumns: wideColumns,
+      );
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(
