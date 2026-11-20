@@ -40,7 +40,7 @@ class TransactionType {
 // ---------------------------------------------------------------------
 const List<TransactionType> kTransactionTypes = [
   // ---------- IN (وارد) ----------
-  TransactionType(code: 'return_in', label: 'مرتجع على', direction: 'IN'),
+  TransactionType(code: 'return_in', label: 'مرتجع', direction: 'IN'),
   TransactionType(code: 'packaging_in', label: 'إدخال تغليف', direction: 'IN'),
   TransactionType(code: 'services_in', label: 'خدمات', direction: 'IN'),
   TransactionType(code: 'warehouse_in', label: 'استلام مستودع آخر', direction: 'IN'),
@@ -128,7 +128,7 @@ TransactionType? typeByCode(String code) {
 bool isRetiredType(String code) => kRetiredTypes.any((t) => t.code == code);
 
 /// The default type for a direction = the FIRST one in the manager's list:
-/// IN → مرتجع على · OUT → مبيعات
+/// IN → مرتجع · OUT → مبيعات
 String defaultTypeFor(String direction) => typesFor(direction).first.code;
 
 /// Turns ANY stored value (new code, old English text, or empty) into a
