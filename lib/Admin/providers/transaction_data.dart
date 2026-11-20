@@ -171,6 +171,9 @@ class TransactionData extends ChangeNotifier {
             TransactionModel.fromMap(transactionMap, key.toString()),
           );
         });
+        // NEW DB: transactions only have `itemId` → fill in the item's
+        // code, length, SW … from the `items` table (see below).
+        await _attachItemDetails();
       } else {
         print(
           'DEBUG: Node "transactions" is empty or does not exist in Firebase.',
@@ -185,15 +188,24 @@ class TransactionData extends ChangeNotifier {
   }
 
   // ===================================================================
-  // LOOKUPS (items + locations) — uses the Firebase INDEX
+  // LOOKUPS (items + locations)
   // ===================================================================
   //
-  // How the data is stored now (Joud's structure):
+  // How the data is stored now (Joud's NEW structure):
   //   items/0, items/1, items/2 …   → one row = one item AT ONE LENGTH
-  //       { "Item Code": "1BMBM010-1008T", "Length": 6.3, "Quantity": 184, … }
-  //   Warehouse1/0, Warehouse1/1 …  → { "Location Code": "WH1-A1-02", … }
-  //   Warehouse2/…                  → same, for WH2
+  //       { "id": 1, "Item Code": "1BMBM010-1008T", "Length": 6.3,
+  //         "Stock": 184, "SW": 0.79, … }
+  //   locations/0, locations/1 …    → { "Location Code": "WH1-A1-02",
+  //                                     "Warehouse": "WH1", "Rack": "A1", … }
+  //   transactions/tx_001           → { "itemId": 2700, "createdBy": …,
+  //                                     "locationCode": …, "quantity": … }
   //
+  // ---- 1) By itemId: DIRECT read, no search → O(1) ----
+  //   The row number is itemId − 1 (items/0 has id 1), so we read
+  //   ref('items/2699') straight away. It also always gets the EXACT row,
+  //   even for the 33 items that appear twice with the same code + length.
+  //
+  // ---- 2) By code (QR scan): indexed SEARCH → O(log n) ----
   // To find a row we SEARCH by a field:
   //   ref('items').orderByChild('Item Code').equalTo(code)
   //   • orderByChild('Item Code') = "sort / search by this field"
@@ -202,7 +214,86 @@ class TransactionData extends ChangeNotifier {
   // the SERVER uses its index and sends back ONLY the matching rows
   // (fast, O(log n)). Without the rule it would send the whole list.
 
-  /// Finds the row of [itemCode] with this [length].
+  /// The name of the stock field in `items` (Joud renamed Quantity → Stock).
+  /// One constant → if it's renamed again, we change ONE line.
+  static const String stockField = 'Stock';
+
+  /// Reads the item with this [itemId] DIRECTLY: items/<itemId − 1>.
+  /// Always fresh from Firebase (used for the live stock on the detail page).
+  Future<ItemRow?> itemById(int itemId) async {
+    final key = '${itemId - 1}'; // id 2700 → row "2699"
+    final snap = await FirebaseDatabase.instance.ref('items/$key').get();
+    if (snap.exists && snap.value is Map) {
+      final data = Map<String, dynamic>.from(snap.value as Map);
+      // Safety check: is it really the right row? (`id` must match)
+      if ((data['id'] as num?)?.toInt() == itemId) {
+        return ItemRow(key: key, data: data);
+      }
+    }
+    // The rows were re-imported in another order → search by the `id`
+    // field instead (needs ".indexOn": ["Item Code", "id"] in the rules).
+    final found = await FirebaseDatabase.instance
+        .ref('items')
+        .orderByChild('id')
+        .equalTo(itemId)
+        .limitToFirst(1)
+        .get();
+    if (!found.exists || found.children.isEmpty) return null;
+    final child = found.children.first;
+    return ItemRow(
+      key: child.key!,
+      data: Map<String, dynamic>.from(child.value as Map),
+    );
+  }
+
+  /// After loading the transactions: read each USED item once and copy its
+  /// code / length / SW / colour into the transactions, so the list, the
+  /// dashboard, search and Reports keep working without other changes.
+  ///
+  /// 50 transactions use ~50 items → ~50 small direct reads, NOT the whole
+  /// items table (3,065 rows).
+  Future<void> _attachItemDetails() async {
+    // toSet() removes repeats: 3 transactions on item 39 → read it once.
+    final ids = transactionDataList
+        .map((t) => t.itemId)
+        .whereType<int>() // drop nulls (old data without itemId)
+        .toSet();
+
+    // Future.wait = start ALL the reads at the same time, then wait for
+    // all of them → much faster than one after the other.
+    final rows = await Future.wait(
+      ids.map((id) async {
+        try {
+          return MapEntry<int, ItemRow?>(id, await itemById(id));
+        } catch (_) {
+          return MapEntry<int, ItemRow?>(id, null); // one failed read doesn't stop the rest
+        }
+      }),
+    );
+    final byId = Map<int, ItemRow?>.fromEntries(rows);
+
+    // Replace each transaction with a copy that has the item's details.
+    transactionDataList = transactionDataList.map((t) {
+      final row = t.itemId == null ? null : byId[t.itemId];
+      if (row == null) return t; // not found → leave it as it is
+      return t.copyWith(
+        itemCode: row.code,
+        length: row.length,
+        sw: row.sw,
+        color: row.color,
+        uomCode: row.uomCode,
+      );
+    }).toList();
+  }
+
+  /// The item row of a transaction: by itemId when we have it (new data),
+  /// otherwise by code + length (old data).
+  Future<ItemRow?> itemFor(TransactionModel tx) {
+    if (tx.itemId != null) return itemById(tx.itemId!);
+    return findItem(tx.itemCode, tx.length);
+  }
+
+  /// Finds the row of [itemCode] with this [length] (used for QR scans).
   /// Returns an [ItemRow] (its key, e.g. "2", + its data) or null.
   ///
   /// Why code AND length? The same code can exist in several rows with
@@ -242,16 +333,12 @@ class TransactionData extends ChangeNotifier {
   }
 
   /// true if [locationCode] (e.g. "WH1-A1-02") exists.
-  /// The number after "WH" tells us which node to search:
-  /// WH1 → Warehouse1, WH2 → Warehouse2 (and WH3 → Warehouse3 later).
+  /// All warehouses are now in ONE table: `locations` (Joud's new
+  /// structure replaced Warehouse1 / Warehouse2). Indexed search, so it
+  /// needs  "locations": { ".indexOn": ["Location Code"] }  in the rules.
   Future<bool> locationExists(String locationCode) async {
-    // RegExp: "WH" + digits at the START of the text → group(1) = the digits
-    final match = RegExp(r'^WH(\d+)-').firstMatch(locationCode);
-    if (match == null) return false; // not a valid location code
-    final node = 'Warehouse${match.group(1)}';
-
     final snap = await FirebaseDatabase.instance
-        .ref(node)
+        .ref('locations')
         .orderByChild('Location Code')
         .equalTo(locationCode)
         .limitToFirst(1) // we only need to know if ONE exists
@@ -259,12 +346,12 @@ class TransactionData extends ChangeNotifier {
     return snap.exists;
   }
 
-  /// Same as [findItem], but throws if the row is missing.
+  /// Same as [itemFor], but throws if the row is missing.
   /// Used when saving: we can't fix stock for an item we can't find.
-  Future<ItemRow> _requireItem(String itemCode, double length) async {
-    final row = await findItem(itemCode, length);
+  Future<ItemRow> _requireItem(TransactionModel tx) async {
+    final row = await itemFor(tx);
     if (row == null) {
-      throw StateError('Item $itemCode (length $length) not found');
+      throw StateError('Item ${tx.itemId ?? tx.itemCode} not found');
     }
     return row;
   }
@@ -278,16 +365,17 @@ class TransactionData extends ChangeNotifier {
   ///
   /// Multi-path update = one `update()` on the ROOT with several paths:
   ///   { 'transactions/tx_001/quantity': 20,
-  ///     'items/2/Quantity': ServerValue.increment(-180) }
+  ///     'items/2/Stock': ServerValue.increment(-180) }
   /// Firebase applies ALL of them or NONE → the transaction and the stock
   /// can never get out of sync (e.g. if the internet drops halfway).
   ///
   /// ServerValue.increment(n) = "add n to the current value ON THE SERVER".
   /// Safe even if a worker scans the same item at the same moment.
+  ///
+  /// (No editedBy: only the admin can edit, so we only save WHEN — editedAt.)
   Future<void> updateTransaction({
     required TransactionModel original,
     required TransactionModel updated,
-    required String editedBy,
   }) async {
     final id = original.transactionId!;
     final now = DateTime.now();
@@ -295,23 +383,21 @@ class TransactionData extends ChangeNotifier {
 
     // 1) The fields of the transaction that may change.
     final Map<String, Object?> changes = {
-      'transactions/$id/itemCode': updated.itemCode,
-      'transactions/$id/itemName': updated.itemName,
+      // (The item can't change — product is locked — so we don't write it.)
       'transactions/$id/locationCode': updated.locationCode,
       'transactions/$id/quantity': updated.quantity,
       'transactions/$id/direction': updated.direction,
       'transactions/$id/type':
           updated.type, // NEW: type code (e.g. 'issue_out')
-      'transactions/$id/editedBy': editedBy,
       'transactions/$id/editedAt': now.toUtc().toIso8601String(),
     };
 
     // 2) Stock correction.
     //    stockEffect: IN 20 → +20, OUT 20 → −20 (see the model).
-    //    The stock lives in items/<row>/Quantity, so first we FIND the row
-    //    (item code + length) with the indexed search.
-    final oldRow = await _requireItem(original.itemCode, original.length);
-    final newRow = await _requireItem(updated.itemCode, updated.length);
+    //    The stock lives in items/<row>/Stock. We get the row DIRECTLY
+    //    from the transaction's itemId (items/<itemId − 1>).
+    final oldRow = await _requireItem(original);
+    final newRow = await _requireItem(updated);
 
     if (oldRow.key == newRow.key) {
       // Same row (same item, same length): apply only the DIFFERENCE.
@@ -322,11 +408,13 @@ class TransactionData extends ChangeNotifier {
         final resultingQuantity = newRow.quantity + delta;
         if (resultingQuantity < 0) {
           throw InsufficientStockException(
-            'Insufficient stock for ${updated.itemName}. '
+            'Insufficient stock for ${updated.itemCode}. '
             'Available: ${newRow.quantity}, required: ${-delta}',
           );
         }
-        changes['items/${newRow.key}/Quantity'] = ServerValue.increment(delta);
+        changes['items/${newRow.key}/$stockField'] = ServerValue.increment(
+          delta,
+        );
       }
     } else {
       // Different row: undo the effect on the OLD row,
@@ -334,21 +422,21 @@ class TransactionData extends ChangeNotifier {
       final oldResult = oldRow.quantity - original.stockEffect;
       if (oldResult < 0) {
         throw InsufficientStockException(
-          'Insufficient stock for ${original.itemName}. '
+          'Insufficient stock for ${original.itemCode}. '
           'Available: ${oldRow.quantity}, required: ${original.stockEffect}',
         );
       }
       final newResult = newRow.quantity + updated.stockEffect;
       if (newResult < 0) {
         throw InsufficientStockException(
-          'Insufficient stock for ${updated.itemName}. '
+          'Insufficient stock for ${updated.itemCode}. '
           'Available: ${newRow.quantity}, required: ${-updated.stockEffect}',
         );
       }
-      changes['items/${oldRow.key}/Quantity'] = ServerValue.increment(
+      changes['items/${oldRow.key}/$stockField'] = ServerValue.increment(
         -original.stockEffect,
       );
-      changes['items/${newRow.key}/Quantity'] = ServerValue.increment(
+      changes['items/${newRow.key}/$stockField'] = ServerValue.increment(
         updated.stockEffect,
       );
     }
@@ -361,10 +449,7 @@ class TransactionData extends ChangeNotifier {
     // 4) Update our local list so every screen shows the new values.
     final index = transactionDataList.indexWhere((t) => t.transactionId == id);
     if (index != -1) {
-      transactionDataList[index] = updated.copyWith(
-        editedBy: editedBy,
-        editedAt: now,
-      );
+      transactionDataList[index] = updated.copyWith(editedAt: now);
     }
     notifyListeners(); // → the list + dashboard rebuild
   }
@@ -394,13 +479,13 @@ class TransactionData extends ChangeNotifier {
     final now = DateTime.now();
     final root = FirebaseDatabase.instance.ref();
 
-    // push() creates a NEW unique id under "transactions" (like "-Oa8x…"),
-    // without writing anything yet. `.key` gives us that id.
-    final newId = root.child('transactions').push().key!;
+    // The new id follows Joud's format: tx_001, tx_002 … → the next number.
+    final newId = await _nextTransactionId();
 
     // The opposite transaction.
     final reversal = TransactionModel(
       transactionId: newId,
+      itemId: original.itemId, // same item (saved as itemId in Firebase)
       itemCode: original.itemCode,
       itemName: original.itemName,
       locationCode: original.locationCode,
@@ -410,7 +495,7 @@ class TransactionData extends ChangeNotifier {
       stockKeeperId: reversedBy, // the admin who reversed it
       timestamp: now,
       reversalOf: id,
-      numericId: original.numericId,
+      numericId: int.parse(newId.substring(3)), // "tx_051" → 51
       uomCode: original.uomCode,
       color: original.color,
       length: original.length,
@@ -422,12 +507,12 @@ class TransactionData extends ChangeNotifier {
       stock: original.stock, // link back to the original
     );
 
-    // Find the item's row (code + length) BEFORE writing anything.
-    final row = await _requireItem(original.itemCode, original.length);
+    // Find the item's row (by itemId) BEFORE writing anything.
+    final row = await _requireItem(original);
     final resultingQuantity = row.quantity + reversal.stockEffect;
     if (resultingQuantity < 0) {
       throw InsufficientStockException(
-        'Insufficient stock for ${original.itemName}. '
+        'Insufficient stock for ${original.itemCode}. '
         'Available: ${row.quantity}, required: ${original.quantity}',
       );
     }
@@ -442,7 +527,9 @@ class TransactionData extends ChangeNotifier {
       'transactions/$id/reversalId': newId,
       // 3) stock: the reversal's effect = the opposite of the original's
       //    (IN 20 → −20 · OUT 20 → +20), on the item's row.
-      'items/${row.key}/Quantity': ServerValue.increment(reversal.stockEffect),
+      'items/${row.key}/$stockField': ServerValue.increment(
+        reversal.stockEffect,
+      ),
     };
 
     await root.update(changes); // waits for the server to confirm
@@ -461,10 +548,30 @@ class TransactionData extends ChangeNotifier {
     notifyListeners();
     return newId;
   }
+
+  /// The next free id in Joud's format: if the biggest is tx_050 → "tx_051".
+  ///
+  /// padLeft(3, '0'): 51 → "051" (always 3 digits, so ids sort correctly).
+  /// We also CHECK Firebase that the id is free, in case another device
+  /// added a transaction after we loaded the list (then we try the next).
+  Future<String> _nextTransactionId() async {
+    // fold = walk the list keeping the biggest number seen so far.
+    var next = transactionDataList.fold<int>(
+          0,
+          (biggest, t) => t.numericId > biggest ? t.numericId : biggest,
+        ) +
+        1;
+    while (true) {
+      final id = 'tx_${next.toString().padLeft(3, '0')}';
+      final snap = await FirebaseDatabase.instance.ref('transactions/$id').get();
+      if (!snap.exists) return id; // free → use it
+      next++; // taken → try the next number
+    }
+  }
 }
 
 /// One row of the `items` list: its KEY (position, e.g. "2") + its data.
-/// We need the key to write the stock: items/<key>/Quantity.
+/// We need the key to write the stock: items/<key>/Stock.
 class ItemRow {
   const ItemRow({required this.key, required this.data});
 
@@ -472,7 +579,20 @@ class ItemRow {
   final Map<String, dynamic> data;
 
   /// The real, current stock of this item (at this length).
-  int get quantity => (data['Quantity'] as num?)?.toInt() ?? 0;
+  /// (New field name `Stock`; `Quantity` is the old name, just in case.)
+  int get quantity =>
+      ((data[TransactionData.stockField] ?? data['Quantity']) as num?)
+          ?.toInt() ??
+      0;
+
+  /// The item code, e.g. "2MFMF-BT128".
+  String get code => (data['Item Code'] ?? '').toString();
+
+  /// Colour / finish code from the Excel (e.g. "ANOD", "MF").
+  String get color => (data['COLOR'] ?? '').toString();
+
+  /// Unit, e.g. "NOS" (= pieces).
+  String get uomCode => (data['UOM Code'] ?? '').toString();
 
   /// The item's name, if the row has one (fallback: "Item <code>").
   String nameOr(String code) =>
