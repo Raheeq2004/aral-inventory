@@ -68,7 +68,7 @@ class TransactionsCard extends StatelessWidget {
               : Icon(Icons.arrow_upward, color: amountColor),
         ),
         subtitle: Text(
-          "Location : ${transaction.locationCode}\n${transaction.stockKeeperId} • ${DateFormat('d MMM, yyyy').format(transaction.timestamp.toLocal())}",
+          "Location : ${transaction.locationCode}\n ${DateFormat('d MMM, yyyy').format(transaction.timestamp.toLocal())}",
         ),
         // ---> ADDED STOCK DISPLAY HERE IN TRAILING <---
         trailing: Column(

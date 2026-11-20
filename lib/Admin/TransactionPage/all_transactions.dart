@@ -61,17 +61,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                         isDismissible: true,
                         backgroundColor: Colors.transparent,
                         builder: (context) => const FilterBottonSheetContent(),
-                      ).then((_) {
-                        context.read<TransactionData>().setFilters(
-                          date: filterProvider.selectedDate,
-                          customDateRange: filterProvider.customDateRange,
-                          movement: filterProvider
-                              .selectedMovement, // FIX: pass the IN/OUT filter
-                          warehouse: filterProvider.selectedWarehouse,
-                          length: filterProvider.selectedLength,
-                          sort: filterProvider.selectedSort,
-                        );
-                      });
+                      ).then((_) => _syncFilters(filterProvider));
                     },
                     icon: Stack(
                       clipBehavior: Clip.none,
@@ -149,7 +139,7 @@ class _AllTransactionsPageState extends State<AllTransactionsPage> {
                       TextButton(
                         onPressed: () {
                           filterProvider.resetAll();
-                          context.read<TransactionData>().setFilters();
+                          _syncFilters(filterProvider);
                         },
                         style: TextButton.styleFrom(padding: EdgeInsets.zero),
                         child: const Text(
