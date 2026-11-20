@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 class StepProgressBar extends StatelessWidget {
   final int currentStep; // 1 = Product, 2 = Location, 3 = Quantity
 
-  const StepProgressBar({required this.currentStep});
+  const StepProgressBar({super.key, required this.currentStep});
 
   @override
   Widget build(BuildContext context) {
