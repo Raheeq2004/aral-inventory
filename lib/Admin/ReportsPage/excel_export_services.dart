@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:excel/excel.dart' as xl;
@@ -11,25 +12,53 @@ import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// One line of the "stock on a date" report: how many units of one item
-/// were in one location at the end of the chosen day.
-class StockRow {
-  final String itemCode;
-  final String itemName;
-  final String locationCode;
-  int quantity;
+/// One line of the stock report: an item row (all its properties) and its
+/// STOCK on the chosen day.
+class StockLine {
+  final ItemRow item;
+  final int stock;
+  const StockLine(this.item, this.stock);
+}
 
-  StockRow({
-    required this.itemCode,
-    required this.itemName,
-    required this.locationCode,
-    required this.quantity,
-  });
+/// Finds the `items` row of a transaction: by item id first (the primary
+/// key), otherwise by item code + length (old transactions).
+class ItemIndex {
+  ItemIndex(Iterable<ItemRow> items) {
+    for (final r in items) {
+      final id = ExcelExportService.idOf(r);
+      if (id != null) _byId[id] = r;
+      _byCode.putIfAbsent(r.code, () => []).add(r);
+    }
+  }
+
+  final Map<int, ItemRow> _byId = {};
+  final Map<String, List<ItemRow>> _byCode = {};
+
+  ItemRow? forTx(TransactionModel tx) {
+    final id = tx.itemId;
+    if (id != null) {
+      final row = _byId[id];
+      if (row != null) return row;
+    }
+    final sameCode = _byCode[tx.itemCode];
+    if (sameCode == null) return null;
+    for (final r in sameCode) {
+      if ((r.length - tx.length).abs() < 0.001) return r;
+    }
+    return (sameCode.length == 1 && tx.length <= 0) ? sameCode.first : null;
+  }
 }
 
 /// build the .xlsx files
 class ExcelExportService {
   ExcelExportService._();
+
+  // ---------------------------------------------------------------------
+  // helpers
+  // ---------------------------------------------------------------------
+
+  /// The primary key of an item row.
+  static int? idOf(ItemRow r) => (r.data['id'] as num?)?.toInt();
 
   /// Location codes look like "WH1-A1-01" (or "WH1 / A1 / 01").
   /// Split on dashes, slashes or spaces -> [warehouse, rack, shelf].
@@ -79,40 +108,91 @@ class ExcelExportService {
     return t;
   }
 
-  /// Stock at the END of the day [asOf]:
-  /// for every item + location, add up all IN and subtract all OUT
-  /// up to that day. Reversals are normal rows (opposite direction),
-  /// so they cancel out by themselves. Lines with 0 units are left out.
-  static List<StockRow> stockAsOf(
-    Iterable<TransactionModel> transactions,
-    DateTime asOf,
-  ) {
-    final endExclusive = DateTime(asOf.year, asOf.month, asOf.day + 1);
-    final lines = <String, StockRow>{};
+  // ---------------------------------------------------------------------
+  // ITEM PROPERTIES  (every report shows ALL of them)
+  // ---------------------------------------------------------------------
 
+  // shown first, in this order (if the items table has them)
+  static const List<String> _firstKeys = [
+    'Item Code',
+    'COLOR',
+    'Length',
+    'UOM Code',
+    'SW',
+  ];
+
+  // NOT listed as normal properties:
+  //  id            -> has its own "Item ID" column (the primary key)
+  //  Name / name   -> product name is removed from the reports
+  //  Stock / Quantity -> this IS the stock, it gets its own column
+  static const Set<String> _skipKeys = {
+    'id',
+    'Name',
+    'name',
+    'Stock',
+    'Quantity',
+  };
+
+  /// Every property name found in the items table (ALL of them, dynamic),
+  /// known ones first, the rest A-Z.
+  static List<String> propertyKeys(Iterable<ItemRow> items) {
+    final found = <String>{};
+    for (final r in items) {
+      found.addAll(r.data.keys);
+    }
+    found.removeAll(_skipKeys);
+    final first = _firstKeys.where(found.contains).toList();
+    final rest = found.where((k) => !_firstKeys.contains(k)).toList()..sort();
+    return [...first, ...rest];
+  }
+
+  static xl.CellValue _cell(Object? v) {
+    if (v == null) return xl.TextCellValue('');
+    if (v is int) return xl.IntCellValue(v);
+    if (v is num) return xl.DoubleCellValue(v.toDouble());
+    return xl.TextCellValue('$v');
+  }
+
+  // ---------------------------------------------------------------------
+  // STOCK ON A DATE
+  // ---------------------------------------------------------------------
+
+  /// The `items` table keeps each item's stock RIGHT NOW (row.quantity).
+  /// Stock at the end of [asOf] = stock now, minus everything that moved
+  /// AFTER that day (IN counts +, OUT counts -). Every row in [items] is
+  /// listed, also the ones with zero stock.
+  /// [allItems] is only used to find the item of each transaction.
+  static List<StockLine> stockAsOf({
+    required Iterable<ItemRow> allItems,
+    required Iterable<ItemRow> items,
+    required Iterable<TransactionModel> transactions,
+    required DateTime asOf,
+  }) {
+    final endExclusive = DateTime(asOf.year, asOf.month, asOf.day + 1);
+    final index = ItemIndex(allItems);
+
+    final movedAfter = <String, int>{}; // item row key -> net movement
     for (final tx in transactions) {
-      if (!tx.timestamp.toLocal().isBefore(endExclusive)) continue;
-      final signed = tx.direction.toUpperCase() == 'IN'
-          ? tx.quantity
-          : -tx.quantity;
-      final key = '${tx.itemCode}|${tx.locationCode}';
-      final line = lines.putIfAbsent(
-        key,
-        () => StockRow(
-          itemCode: tx.itemCode,
-          itemName: tx.itemName,
-          locationCode: tx.locationCode,
-          quantity: 0,
-        ),
-      );
-      line.quantity += signed;
+      if (tx.timestamp.toLocal().isBefore(endExclusive)) continue;
+      final row = index.forTx(tx);
+      if (row == null) continue;
+      movedAfter[row.key] = (movedAfter[row.key] ?? 0) + tx.stockEffect;
     }
 
-    return lines.values.where((l) => l.quantity != 0).toList()..sort((a, b) {
-      final byItem = a.itemCode.compareTo(b.itemCode);
-      return byItem != 0 ? byItem : a.locationCode.compareTo(b.locationCode);
+    final lines = [
+      for (final r in items)
+        StockLine(r, r.quantity - (movedAfter[r.key] ?? 0)),
+    ];
+    lines.sort((a, b) {
+      final byCode = a.item.code.compareTo(b.item.code);
+      return byCode != 0 ? byCode : a.item.length.compareTo(b.item.length);
     });
+    return lines;
   }
+
+  // ---------------------------------------------------------------------
+  // building the file
+  // ---------------------------------------------------------------------
 
   /// creates excel file; returns path on mobile/desktop, null on web
   static Future<String?> _buildFile({
@@ -168,89 +248,118 @@ class ExcelExportService {
     return file.path;
   }
 
-  /// Transaction log (date only, no time, no type column).
+  // ---------------------------------------------------------------------
+  // REPORT 1: transaction log
+  // ---------------------------------------------------------------------
   static Future<bool> exportAndNotify({
     required BuildContext context,
     required List<TransactionModel> transactions,
+    required List<ItemRow> items, // the whole items table
     DateTime? from,
     DateTime? to,
   }) {
     final dateFmt = DateFormat('yyyy-MM-dd');
+    final index = ItemIndex(items);
+    final keys = propertyKeys(items);
+
+    final headers = [
+      'Date',
+      'Item ID',
+      ...keys,
+      'Item stock (now)',
+      'Location',
+      'Warehouse',
+      'Rack',
+      'Shelf',
+      'Worker',
+      'Direction',
+      'Quantity',
+      'Type',
+      'Notes',
+    ];
+
     final sorted = [...transactions]
       ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
+    final rows = <List<xl.CellValue>>[];
+    for (final tx in sorted) {
+      final item = index.forTx(tx);
+      final place = locationParts(tx.locationCode);
+      final isIn = tx.direction.toUpperCase() == 'IN';
+
+      rows.add([
+        xl.TextCellValue(dateFmt.format(tx.timestamp.toLocal())),
+        _cell(item != null ? idOf(item) : tx.itemId),
+        for (final k in keys)
+          _cell(
+            item?.data[k] ??
+                (k == 'Item Code' && tx.itemCode.isNotEmpty
+                    ? tx.itemCode
+                    : null),
+          ),
+        _cell(item?.quantity),
+        xl.TextCellValue(tx.locationCode),
+        xl.TextCellValue(place[0]),
+        xl.TextCellValue(place[1]),
+        xl.TextCellValue(place[2]),
+        xl.TextCellValue(tx.stockKeeperId),
+        xl.TextCellValue(tx.direction.toUpperCase()),
+        xl.IntCellValue(isIn ? tx.quantity : -tx.quantity),
+        xl.TextCellValue(englishType(tx.type)),
+        // Notes: is this row reversed, or is it a reversal?
+        xl.TextCellValue(
+          tx.reversed
+              ? 'Reversed${tx.reversalId != null ? ' (by ${tx.reversalId})' : ''}'
+              : tx.isReversal
+              ? 'Reversal of ${tx.reversalOf ?? '-'}'
+              : '',
+        ),
+      ]);
+    }
+
+    return _saveAndNotify(
+      context: context,
+      fileName: fileNameFor(from: from, to: to),
+      headers: headers,
+      rows: rows,
+      wideColumns: {
+        headers.indexOf('Location'),
+        headers.indexOf('Type'),
+        headers.indexOf('Notes'),
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // REPORT 2: stock on a date (every item, even with zero stock)
+  // ---------------------------------------------------------------------
+  static Future<bool> exportStockAndNotify({
+    required BuildContext context,
+    required List<StockLine> lines,
+    required List<ItemRow> items, // the whole items table (for the columns)
+    required DateTime asOf,
+  }) {
+    final keys = propertyKeys(items);
+    final headers = [
+      'Item ID',
+      ...keys,
+      'Stock (as of ${DateFormat('dd-MM-yyyy').format(asOf)})',
+    ];
+
     final rows = <List<xl.CellValue>>[
-      for (final tx in sorted)
+      for (final l in lines)
         [
-          xl.TextCellValue(dateFmt.format(tx.timestamp.toLocal())),
-          xl.TextCellValue(tx.itemCode),
-          xl.TextCellValue(tx.itemName),
-          xl.TextCellValue(tx.locationCode),
-          xl.TextCellValue(warehouseOf(tx.locationCode)),
-          xl.TextCellValue(tx.stockKeeperId),
-          xl.TextCellValue(tx.direction.toUpperCase()),
-          xl.IntCellValue(
-            tx.direction.toUpperCase() == 'IN' ? tx.quantity : -tx.quantity,
-          ),
-          xl.TextCellValue(englishType(tx.type)),
-          // Notes: is this row reversed, or is it a reversal?
-          xl.TextCellValue(
-            tx.reversed
-                ? 'Reversed${tx.reversalId != null ? ' (by #${tx.reversalId})' : ''}'
-                : tx.isReversal
-                ? 'Reversal of #${tx.reversalOf ?? '—'}'
-                : '',
-          ),
+          _cell(idOf(l.item)),
+          for (final k in keys) _cell(l.item.data[k]),
+          xl.IntCellValue(l.stock),
         ],
     ];
 
     return _saveAndNotify(
       context: context,
-      fileName: fileNameFor(from: from, to: to),
-      headers: const [
-        'Date',
-        'Item code',
-        'Product name',
-        'Location',
-        'Warehouse',
-        'Worker',
-        'Direction',
-        'Quantity',
-        'Type',
-        'Notes',
-      ],
-      rows: rows,
-      wideColumns: {2, 3, 8, 9},
-    );
-  }
-
-  /// Stock on a date (one line per item + location).
-  static Future<bool> exportStockAndNotify({
-    required BuildContext context,
-    required List<StockRow> rows,
-    required DateTime asOf,
-  }) {
-    return _saveAndNotify(
-      context: context,
       fileName: stockFileNameFor(asOf),
-      headers: const [
-        'Item code',
-        'Product name',
-        'Location',
-        'Warehouse',
-        'Net movement (IN - OUT)', // NOT real stock yet
-      ],
-      rows: [
-        for (final r in rows)
-          [
-            xl.TextCellValue(r.itemCode),
-            xl.TextCellValue(r.itemName),
-            xl.TextCellValue(r.locationCode),
-            xl.TextCellValue(warehouseOf(r.locationCode)),
-            xl.IntCellValue(r.quantity),
-          ],
-      ],
-      wideColumns: {1, 2},
+      headers: headers,
+      rows: rows,
     );
   }
 

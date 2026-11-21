@@ -1,5 +1,7 @@
+import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Admin/ReportsPage/excel_export_services.dart';
+import 'package:aral_project/Admin/ReportsPage/items_table.dart';
 import 'package:aral_project/Admin/ReportsPage/warehouse_locations.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Theme/theme.dart';
@@ -19,18 +21,28 @@ class ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<ReportsPage> {
+  /// The 6 lengths (static, same ones as the Transactions filter sheet).
+  static const List<double> _lengths = [5.0, 5.7, 5.8, 6.0, 6.3, 6.8];
+
   late DateTime _from;
   late DateTime _to;
   late DateTime _asOf; // "stock on a date"
   ReportKind _kind = ReportKind.log;
   Operations operations = Operations.all;
   String? _item; // item code, null = all items
+  double? _length; // null = all lengths
+  String? _finish; // = COLOR in the items table, null = all
   String? _warehouse; // null = all
-  String? _rack; // null = all (only when a warehouse is picked)
-  String? _shelf; // null = all (only when a rack is picked)
+  String? _rack; // null = all
+  String? _shelf; // null = all
   String? _worker; // null = all
   bool _exporting = false;
-  List<List<String>> _dbPlaces = []; // [warehouse, rack, shelf] from the db
+
+  List<List<String>> _dbPlaces =
+      []; // [warehouse, rack, shelf] from `locations`
+  List<ItemRow> _items = []; // the whole `items` table
+  bool _itemsLoaded = false;
+  String? _itemsError;
 
   @override
   void initState() {
@@ -39,19 +51,58 @@ class _ReportsPageState extends State<ReportsPage> {
     _from = DateTime(now.year, now.month, 1);
     _to = DateTime(now.year, now.month, now.day); // today
     _asOf = _to;
-    // all locations of the db (even ones without transactions)
+    _loadItems();
+    // all locations of the `locations` table
     WarehouseLocations.loadParts().then((v) {
       if (mounted) setState(() => _dbPlaces = v);
     });
   }
 
+  Future<void> _loadItems() async {
+    try {
+      final rows = await ItemsTable.loadAll();
+      if (!mounted) return;
+      setState(() {
+        _items = rows;
+        _itemsLoaded = true;
+        _itemsError = null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _itemsLoaded = true;
+        _itemsError = '$e';
+      });
+    }
+  }
+
   // ---------------------------------------------------------------------
   // filtering
   // ---------------------------------------------------------------------
-  bool _matchesItem(TransactionModel tx) =>
-      _item == null || tx.itemCode == _item;
+  bool _sameLength(double a) => (a - _length!).abs() < 0.001;
 
-  /// warehouse / rack / shelf are read from the location code column
+  /// item code + length + finish of a TRANSACTION
+  /// (taken from its row in the items table when we can find it)
+  bool _matchesItem(TransactionModel tx, ItemIndex index) {
+    final row = index.forTx(tx);
+    final code = row?.code ?? tx.itemCode;
+    final length = row?.length ?? tx.length;
+    final color = row?.color ?? tx.color;
+    if (_item != null && code != _item) return false;
+    if (_length != null && !_sameLength(length)) return false;
+    if (_finish != null && color != _finish) return false;
+    return true;
+  }
+
+  /// item code + length + finish of an ITEM ROW (stock report)
+  bool _matchesRow(ItemRow r) {
+    if (_item != null && r.code != _item) return false;
+    if (_length != null && !_sameLength(r.length)) return false;
+    if (_finish != null && r.color != _finish) return false;
+    return true;
+  }
+
+  /// warehouse / rack / shelf are read from the location code
   bool _matchesPlace(TransactionModel tx) {
     final p = ExcelExportService.locationParts(tx.locationCode);
     if (_warehouse != null && p[0] != _warehouse) return false;
@@ -60,7 +111,10 @@ class _ReportsPageState extends State<ReportsPage> {
     return true;
   }
 
-  List<TransactionModel> _filterLog(List<TransactionModel> all) {
+  List<TransactionModel> _filterLog(
+    List<TransactionModel> all,
+    ItemIndex index,
+  ) {
     final start = DateTime(_from.year, _from.month, _from.day);
     final endExclusive = DateTime(_to.year, _to.month, _to.day + 1);
 
@@ -72,7 +126,7 @@ class _ReportsPageState extends State<ReportsPage> {
       if (operations == Operations.inOnly && dir != 'IN') return false;
       if (operations == Operations.outOnly && dir != 'OUT') return false;
 
-      if (!_matchesItem(tx) || !_matchesPlace(tx)) return false;
+      if (!_matchesItem(tx, index) || !_matchesPlace(tx)) return false;
       if (_worker != null && tx.stockKeeperId != _worker) return false;
       return true;
     }).toList();
@@ -102,19 +156,21 @@ class _ReportsPageState extends State<ReportsPage> {
 
   Future<void> _export(
     List<TransactionModel> logRows,
-    List<StockRow> stockRows,
+    List<StockLine> stockLines,
   ) async {
     setState(() => _exporting = true);
     if (_kind == ReportKind.stock) {
       await ExcelExportService.exportStockAndNotify(
         context: context,
-        rows: stockRows,
+        lines: stockLines,
+        items: _items,
         asOf: _asOf,
       );
     } else {
       await ExcelExportService.exportAndNotify(
         context: context,
         transactions: logRows,
+        items: _items,
         from: _from,
         to: _to,
       );
@@ -131,38 +187,40 @@ class _ReportsPageState extends State<ReportsPage> {
       builder: (context, data, child) {
         final all = data.transactionDataList;
         final isStock = _kind == ReportKind.stock;
+        final index = ItemIndex(_items);
 
-        final logRows = isStock ? <TransactionModel>[] : _filterLog(all);
-        final stockRows = isStock
+        final logRows = isStock ? <TransactionModel>[] : _filterLog(all, index);
+        final stockLines = isStock
             ? ExcelExportService.stockAsOf(
-                all.where((t) => _matchesItem(t) && _matchesPlace(t)),
-                _asOf,
+                allItems: _items,
+                items: _items.where(_matchesRow),
+                transactions: all,
+                asOf: _asOf,
               )
-            : <StockRow>[];
+            : <StockLine>[];
 
-        final matchCount = isStock ? stockRows.length : logRows.length;
+        final matchCount = isStock ? stockLines.length : logRows.length;
         final count = NumberFormat('#,##0').format(matchCount);
         final fileName = isStock
             ? ExcelExportService.stockFileNameFor(_asOf)
             : ExcelExportService.fileNameFor(from: _from, to: _to);
-        final canExport = !data.isLoading && !_exporting && matchCount > 0;
+        final ready = _itemsLoaded && _itemsError == null && !data.isLoading;
+        final canExport = ready && !_exporting && matchCount > 0;
 
-        // ---- filter options, read from the data columns ----
-        // items: code -> name
-        final itemNames = <String, String>{};
-        for (final t in all) {
-          if (t.itemCode.trim().isEmpty) continue;
-          itemNames.putIfAbsent(t.itemCode, () => t.itemName);
-        }
-        final itemCodes = itemNames.keys.toList()..sort();
+        // ---- filter options ----
+        // item codes + finishes: from the `items` table
+        final itemCodes = _distinct(_items.map((r) => r.code));
+        final finishes = _distinct(_items.map((r) => r.color));
 
-        // location: db rows + codes seen in transactions, read as
-        // [warehouse, rack, shelf]. Rack / shelf lists narrow down
-        // when a warehouse / rack is picked, but are always shown.
-        final places = [
-          ..._dbPlaces,
-          ...all.map((t) => ExcelExportService.locationParts(t.locationCode)),
-        ];
+        // warehouse -> rack -> shelf: from the `locations` table
+        // (if it could not be read, fall back to the codes in the
+        // transactions). Rack / shelf lists narrow down when a warehouse /
+        // rack is picked.
+        final places = _dbPlaces.isNotEmpty
+            ? _dbPlaces
+            : all
+                  .map((t) => ExcelExportService.locationParts(t.locationCode))
+                  .toList();
         final warehouses = _distinct(places.map((p) => p[0]));
         final racks = _distinct(
           places
@@ -193,10 +251,10 @@ class _ReportsPageState extends State<ReportsPage> {
               const SizedBox(height: 8),
               Text(
                 isStock
-                    ? 'TEMPORARY: shows net movement (IN - OUT) up to the '
-                          'chosen day, not the real stock balance yet.'
-                    : 'Create an Excel sheet with product names, locations, '
-                          'workers, IN/OUT and quantities.',
+                    ? 'The stock of every item on the chosen day, also the '
+                          'items with zero stock.'
+                    : 'Create an Excel sheet with the item details, '
+                          'locations, workers, IN/OUT and quantities.',
                 style: textTheme.bodyLarge?.copyWith(
                   color: AppTheme.textColorSecondary,
                 ),
@@ -289,38 +347,56 @@ class _ReportsPageState extends State<ReportsPage> {
                 const SizedBox(height: 24),
               ],
 
-              // one item (drop-down with search)
+              // item: drop-down with search, shows only the item code
               _label(context, 'Item'),
               const SizedBox(height: 8),
-              _itemPicker(itemCodes, itemNames),
+              _itemPicker(itemCodes),
               const SizedBox(height: 24),
 
-              // warehouse -> rack -> shelf
-              _label(context, 'Warehouse'),
+              // length: 6 static values
+              _label(context, 'Length'),
               const SizedBox(height: 8),
-              _singleSelect(warehouses, _warehouse, (v) {
-                _warehouse = v;
-                _rack = null; // old rack / shelf may not exist here
-                _shelf = null;
-              }),
-              const SizedBox(height: 24),
-              _label(context, 'Rack'),
-              const SizedBox(height: 8),
-              _singleSelect(racks, _rack, (v) {
-                _rack = v;
-                _shelf = null;
-              }),
-              const SizedBox(height: 24),
-              _label(context, 'Shelf'),
-              const SizedBox(height: 8),
-              _singleSelect(shelves, _shelf, (v) => _shelf = v),
+              _singleSelect<double>(
+                _lengths,
+                _length,
+                (v) => _length = v,
+                labelOf: (v) => v.toStringAsFixed(1),
+              ),
               const SizedBox(height: 24),
 
-              // worker (log only)
+              // finish (COLOR in the db)
+              _label(context, 'Finish'),
+              const SizedBox(height: 8),
+              _singleSelect<String>(finishes, _finish, (v) => _finish = v),
+              const SizedBox(height: 24),
+
+              // warehouse -> rack -> shelf (transaction log only: the stock
+              // is kept per item, not per location)
               if (!isStock) ...[
+                _label(context, 'Warehouse'),
+                const SizedBox(height: 8),
+                _singleSelect<String>(warehouses, _warehouse, (v) {
+                  _warehouse = v;
+                  _rack = null; // old rack / shelf may not exist here
+                  _shelf = null;
+                }),
+                const SizedBox(height: 24),
+                _label(context, 'Rack'),
+                const SizedBox(height: 8),
+                _singleSelect<String>(racks, _rack, (v) {
+                  _rack = v;
+                  _shelf = null;
+                }),
+                const SizedBox(height: 24),
+                _label(context, 'Shelf'),
+                const SizedBox(height: 8),
+                _singleSelect<String>(shelves, _shelf, (v) => _shelf = v),
+                const SizedBox(height: 24),
+
+                // worker
                 _label(context, 'Worker'),
                 const SizedBox(height: 8),
-                _singleSelect(workers, _worker, (v) => _worker = v),
+                _singleSelect<String>(workers, _worker, (v) => _worker = v),
                 const SizedBox(height: 24),
               ],
               const SizedBox(height: 4),
@@ -352,10 +428,12 @@ class _ReportsPageState extends State<ReportsPage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              data.isLoading
-                                  ? 'Loading transactions...'
+                              _itemsError != null
+                                  ? 'Could not read the items table'
+                                  : !ready
+                                  ? 'Loading...'
                                   : isStock
-                                  ? '$count stock lines'
+                                  ? '$count items'
                                   : '$count transactions match',
                               style: textTheme.bodyLarge?.copyWith(
                                 fontWeight: FontWeight.w600,
@@ -363,8 +441,8 @@ class _ReportsPageState extends State<ReportsPage> {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              fileName,
-                              maxLines: 1,
+                              _itemsError ?? fileName,
+                              maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: textTheme.bodySmall,
                             ),
@@ -383,7 +461,7 @@ class _ReportsPageState extends State<ReportsPage> {
                 height: 56,
                 child: ElevatedButton.icon(
                   onPressed: canExport
-                      ? () => _export(logRows, stockRows)
+                      ? () => _export(logRows, stockLines)
                       : null,
                   style: ElevatedButton.styleFrom(
                     shape: RoundedRectangleBorder(
@@ -430,31 +508,37 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   /// "All" + one chip per option. Only one can be selected at a time.
-  Widget _singleSelect(
-    List<String> options,
-    String? selected,
-    void Function(String?) onChanged,
-  ) => Wrap(
+  Widget _singleSelect<T>(
+    List<T> options,
+    T? selected,
+    void Function(T?) onChanged, {
+    String Function(T)? labelOf,
+  }) => Wrap(
     spacing: 8,
     runSpacing: 8,
     children: [
       _chip('All', selected == null, () => setState(() => onChanged(null))),
       for (final o in options)
-        _chip(o, selected == o, () => setState(() => onChanged(o))),
+        _chip(
+          labelOf != null ? labelOf(o) : '$o',
+          selected == o,
+          () => setState(() => onChanged(o)),
+        ),
     ],
   );
 
-  /// Drop-down list you can type in to search (by item code OR name).
-  Widget _itemPicker(List<String> codes, Map<String, String> names) {
+  /// Drop-down list you can type in to search. Shows ONLY the item code
+  /// (one entry per code, from the `items` table).
+  Widget _itemPicker(List<String> codes) {
     return DropdownMenu<String?>(
       expandedInsets: EdgeInsets.zero, // full width
       initialSelection: _item,
       enableFilter: true,
       requestFocusOnTap: true, // lets the user type
-      hintText: 'Search item code or name',
+      hintText: _itemsLoaded ? 'Search item code' : 'Loading items...',
       leadingIcon: const Icon(Icons.search),
       menuHeight: 320,
-      // "contains" search on the whole label (code + name)
+      // "contains" search
       filterCallback: (entries, filter) {
         final q = filter.trim().toLowerCase();
         if (q.isEmpty) return entries;
@@ -464,12 +548,7 @@ class _ReportsPageState extends State<ReportsPage> {
       dropdownMenuEntries: [
         const DropdownMenuEntry<String?>(value: null, label: 'All items'),
         for (final code in codes)
-          DropdownMenuEntry<String?>(
-            value: code,
-            label: (names[code] ?? '').trim().isEmpty
-                ? code
-                : '$code  ·  ${names[code]}',
-          ),
+          DropdownMenuEntry<String?>(value: code, label: code),
       ],
     );
   }
