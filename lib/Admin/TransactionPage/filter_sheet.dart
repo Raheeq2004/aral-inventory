@@ -1,5 +1,5 @@
 import 'package:aral_project/Admin/providers/filter_provider.dart';
-import 'package:aral_project/Admin/providers/transaction_data.dart';
+import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';

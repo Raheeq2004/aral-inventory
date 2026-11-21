@@ -24,9 +24,10 @@
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Admin/components/transactions.dart';
 import 'package:aral_project/Admin/providers/filter_provider.dart';
-import 'package:aral_project/Admin/providers/transaction_data.dart';
+import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
+
 // `show DateFormat` → import ONLY DateFormat from intl.
 // (intl also has a TextDirection class that clashes with Flutter's.)
 import 'package:intl/intl.dart' show DateFormat;

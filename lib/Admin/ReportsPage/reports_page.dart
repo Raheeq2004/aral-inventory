@@ -1,7 +1,7 @@
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Admin/ReportsPage/excel_export_services.dart';
 import 'package:aral_project/Admin/ReportsPage/warehouse_locations.dart';
-import 'package:aral_project/Admin/providers/transaction_data.dart';
+import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -48,7 +48,8 @@ class _ReportsPageState extends State<ReportsPage> {
   // ---------------------------------------------------------------------
   // filtering
   // ---------------------------------------------------------------------
-  bool _matchesItem(TransactionModel tx) => _item == null || tx.itemCode == _item;
+  bool _matchesItem(TransactionModel tx) =>
+      _item == null || tx.itemCode == _item;
 
   /// warehouse / rack / shelf are read from the location code column
   bool _matchesPlace(TransactionModel tx) {
@@ -297,15 +298,11 @@ class _ReportsPageState extends State<ReportsPage> {
               // warehouse -> rack -> shelf
               _label(context, 'Warehouse'),
               const SizedBox(height: 8),
-              _singleSelect(
-                warehouses,
-                _warehouse,
-                (v) {
-                  _warehouse = v;
-                  _rack = null; // old rack / shelf may not exist here
-                  _shelf = null;
-                },
-              ),
+              _singleSelect(warehouses, _warehouse, (v) {
+                _warehouse = v;
+                _rack = null; // old rack / shelf may not exist here
+                _shelf = null;
+              }),
               const SizedBox(height: 24),
               _label(context, 'Rack'),
               const SizedBox(height: 8),
@@ -414,8 +411,7 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   static List<String> _distinct(Iterable<String> values) =>
-      values.where((v) => v.trim().isNotEmpty).toSet().toList()
-        ..sort(_natural);
+      values.where((v) => v.trim().isNotEmpty).toSet().toList()..sort(_natural);
 
   /// A2 before A10 (instead of A10 before A2)
   static int _natural(String a, String b) {

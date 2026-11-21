@@ -1,5 +1,7 @@
 import 'dart:async'; // TimeoutException
 
+import 'package:aral_project/Admin/Models/item_row.dart';
+import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:firebase_database/firebase_database.dart'; // .info/connected
 import 'package:flutter/material.dart'; //import wedgets
 import 'package:flutter/services.dart'; // FilteringTextInputFormatter
@@ -11,7 +13,6 @@ import 'package:provider/provider.dart'; // context.read<TransactionData>()
 
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Admin/Models/transaction_types.dart'; // the types list
-import 'package:aral_project/Admin/providers/transaction_data.dart';
 import 'package:aral_project/Theme/theme.dart';
 
 /// STATEFUL: the fields change while the admin edits, and we show a
@@ -205,10 +206,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       _showMessage(e.message, isError: true);
     } on TimeoutException {
       // Nothing was written (we stop BEFORE saving), so we say it honestly.
-      _showMessage(
-        'Couldn\'t save. Check your connection.',
-        isError: true,
-      );
+      _showMessage('Couldn\'t save. Check your connection.', isError: true);
     } catch (e) {
       _showMessage('Couldn\'t save. Try again.', isError: true);
     } finally {
@@ -270,10 +268,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       // NO NEGATIVE STOCK: the reversal was blocked, nothing was written.
       _showMessage(e.message, isError: true);
     } on TimeoutException {
-      _showMessage(
-        'Couldn\'t reverse. Check your connection.',
-        isError: true,
-      );
+      _showMessage('Couldn\'t reverse. Check your connection.', isError: true);
     } catch (e) {
       _showMessage('Couldn\'t reverse. Try again.', isError: true);
     } finally {
@@ -410,9 +405,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                         icon: Icons.calendar_today_outlined,
                         label: 'Date',
                         // toLocal(): Firebase saves UTC → show Amman time
-                        value: DateFormat(
-                          'd MMM y, HH:mm',
-                        ).format(tx.timestamp.toLocal()),
+                        value: DateFormat('d MMM y, HH:mm')
+                            .format(tx.timestamp.toLocal()),
                       ),
                     ),
                   ],
@@ -532,8 +526,9 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                           hint: const Text('اختر نوع الحركة'),
                           // Runs when Save calls _formKey...validate():
                           // empty → red border + this message, no save.
-                          validator: (v) =>
-                              v == null ? 'Choose a type for $_direction' : null,
+                          validator: (v) => v == null
+                              ? 'Choose a type for $_direction'
+                              : null,
                           decoration: const InputDecoration(
                             prefixIcon: Icon(Icons.category_outlined),
                           ),
@@ -633,20 +628,22 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                                 label: const Text('Offline'),
                               )
                             : FilledButton.icon(
-                          onPressed: _isSaving ? null : _save,
-                          // ternary: spinner while saving, ✓ otherwise
-                          icon: _isSaving
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.check),
-                          label: Text(_isSaving ? 'Saving…' : 'Save changes'),
-                        ),
+                                onPressed: _isSaving ? null : _save,
+                                // ternary: spinner while saving, ✓ otherwise
+                                icon: _isSaving
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white,
+                                        ),
+                                      )
+                                    : const Icon(Icons.check),
+                                label: Text(
+                                  _isSaving ? 'Saving…' : 'Save changes',
+                                ),
+                              ),
                       ),
                     ],
                   ),
