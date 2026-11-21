@@ -1,5 +1,6 @@
 import 'dart:async'; // TimeoutException
 
+import 'package:firebase_database/firebase_database.dart'; // .info/connected
 import 'package:flutter/material.dart'; //import wedgets
 import 'package:flutter/services.dart'; // FilteringTextInputFormatter
 // `show DateFormat` = import ONLY DateFormat from intl.
@@ -47,6 +48,16 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
   bool _isSaving = false; // true while waiting for Firebase
 
+  // ONLINE / OFFLINE: the admin can edit or reverse ONLY when online,
+  // because saving needs the item's LIVE stock (no-negative-stock check).
+  // true at first so the banner doesn't flash; the first event from
+  // Firebase gives the real value straight away.
+  bool _online = true;
+
+  // StreamSubscription = our "listening ticket" to a stream of events.
+  // We keep it so we can STOP listening when the page closes (dispose).
+  StreamSubscription<DatabaseEvent>? _connectionSub;
+
   // NEW (item info): the item's row in `items`, loaded when the page opens.
   // It gives us the Arabic name, the LIVE stock and the weight.
   // null while loading, or if the item wasn't found.
@@ -72,12 +83,33 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     _originalType = normalizeType(tx.type, tx.direction);
     _type = _originalType;
     _loadItem(); // start loading the item info (doesn't block the page)
+    _listenToConnection();
+  }
+
+  /// Listens to Firebase's special path ".info/connected":
+  /// Firebase itself keeps it true (connected) or false (offline), and
+  /// `onValue` sends us a new event EVERY time it changes → live.
+  void _listenToConnection() {
+    _connectionSub = FirebaseDatabase.instance
+        .ref('.info/connected')
+        .onValue
+        .listen((event) {
+          final isOnline = event.snapshot.value == true;
+          if (!mounted) return; // page already closed
+          // Was offline, now online → the internet just came back.
+          final cameBack = isOnline && !_online;
+          setState(() => _online = isOnline);
+          // The stock couldn't load while offline → load it again now.
+          if (cameBack && _itemRow == null) _loadItem();
+        });
   }
 
   /// Loads this transaction's item row from Firebase.
   /// NEW DB: directly by itemId → items/<itemId − 1> (no search).
   /// `async` → runs in the background; the page shows "…" meanwhile.
   Future<void> _loadItem() async {
+    // "…" in the chips while loading (also when we reload after offline)
+    if (mounted) setState(() => _loadingItem = true);
     try {
       // context.read is allowed here: it reads the provider once,
       // without listening for changes.
@@ -97,6 +129,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   void dispose() {
     _locationCtrl.dispose();
     _qtyCtrl.dispose();
+    _connectionSub?.cancel(); // stop listening to online/offline
     super.dispose();
   }
 
@@ -111,6 +144,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   // SAVE
   // ===================================================================
   Future<void> _save() async {
+    // Offline → the button is disabled anyway; this is a second safety.
+    if (!_online) return;
     // 1) Nothing changed → just close.
     if (!_hasChanges) {
       Navigator.pop(context);
@@ -135,8 +170,11 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       // 3) Firebase checks — only for what CHANGED.
       // The PRODUCT can't be changed any more (locked field), so we only
       // check the location here.
+      // .timeout: this check needs the internet too → never wait forever.
       if (newLocation != tx.locationCode &&
-          !await provider.locationExists(newLocation)) {
+          !await provider
+              .locationExists(newLocation)
+              .timeout(const Duration(seconds: 10))) {
         setState(() => _locationError = 'This location doesn\'t exist');
         return;
       }
@@ -166,8 +204,10 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       // NO NEGATIVE STOCK: the save was blocked, nothing was written.
       _showMessage(e.message, isError: true);
     } on TimeoutException {
+      // Nothing was written (we stop BEFORE saving), so we say it honestly.
       _showMessage(
-        'No connection. The change will be sent when you\'re back online.',
+        'Couldn\'t save. Check your connection.',
+        isError: true,
       );
     } catch (e) {
       _showMessage('Couldn\'t save. Try again.', isError: true);
@@ -204,6 +244,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
   }
 
   Future<void> _reverse() async {
+    if (!_online) return; // offline → reverse is blocked too
     // Unsaved edits? Reverse uses the SAVED values, so ask to save first.
     if (_hasChanges) {
       _showMessage('Save or cancel your changes before reversing.');
@@ -230,7 +271,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
       _showMessage(e.message, isError: true);
     } on TimeoutException {
       _showMessage(
-        'No connection. The reversal will be sent when you\'re back online.',
+        'Couldn\'t reverse. Check your connection.',
+        isError: true,
       );
     } catch (e) {
       _showMessage('Couldn\'t reverse. Try again.', isError: true);
@@ -292,7 +334,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
     final isIn = _direction == 'IN';
     // locked = reversed, or this row IS a reversal → nothing can be edited
     final locked = tx.reversed || tx.isReversal;
-    final readOnly = locked || _isSaving;
+    // Offline → everything read-only too (the admin edits only online).
+    final readOnly = locked || _isSaving || !_online;
 
     // PopScope controls the phone's BACK button/gesture:
     // canPop: false when there are unsaved changes → we ask first.
@@ -315,8 +358,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: _ReverseIconButton(
-                  // null = disabled while saving / reversing
-                  onPressed: _isSaving ? null : _reverse,
+                  // null = disabled while saving / reversing / offline
+                  onPressed: (_isSaving || !_online) ? null : _reverse,
                 ),
               ),
           ],
@@ -336,6 +379,8 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
               children: [
                 // Cream banner for locked transactions.
                 // We pass only the short TITLE; the widget adds " · read only".
+                // Offline banner (only if the page could be edited at all).
+                if (!_online && !locked) const _OfflineBanner(),
                 if (tx.reversed) const _ReversedBanner(title: 'Reversed'),
                 if (tx.isReversal)
                   _ReversedBanner(
@@ -402,7 +447,9 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
                 // ============ SECTION 3: MOVEMENT (editable) ============
                 // White card: ONLY the fields the admin can change.
-                _SectionTitle(locked ? 'MOVEMENT' : 'MOVEMENT · EDITABLE'),
+                _SectionTitle(
+                  (locked || !_online) ? 'MOVEMENT' : 'MOVEMENT · EDITABLE',
+                ),
                 _SectionCard(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -578,7 +625,14 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: FilledButton.icon(
+                        // Offline → a grey disabled "Offline" button.
+                        child: !_online
+                            ? FilledButton.icon(
+                                onPressed: null, // null = disabled
+                                icon: const Icon(Icons.wifi_off),
+                                label: const Text('Offline'),
+                              )
+                            : FilledButton.icon(
                           onPressed: _isSaving ? null : _save,
                           // ternary: spinner while saving, ✓ otherwise
                           icon: _isSaving
@@ -788,6 +842,54 @@ class _ReversedBanner extends StatelessWidget {
                   const TextSpan(text: ' · read only'),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Cream banner shown while OFFLINE:
+///   [wifi-off icon]  You're offline
+///      Connect to the internet to edit or reverse this transaction.
+/// Same colours as the "Reversed" banner (warningContainer / warningBorder).
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppTheme.warningContainer, // soft cream
+        border: Border.all(color: AppTheme.warningBorder),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Row(
+        // start = the icon stays at the top when the text has 2 lines
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.wifi_off, size: 20, color: AppTheme.warningColor),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'You\'re offline',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: AppTheme.warningColor,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Connect to the internet to edit or reverse this transaction.',
+                  style: TextStyle(fontSize: 12, color: AppTheme.warningColor),
+                ),
+              ],
             ),
           ),
         ],
