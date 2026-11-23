@@ -49,7 +49,7 @@ class _ReportsPageState extends State<ReportsPage> {
   List<ItemRow> _items = const [];
   ItemIndex _index = ItemIndex(const <ItemRow>[]); // transaction -> item row
   ItemCatalog _catalog = ItemCatalog(const <ItemRow>[]); // the picker's index
-  List<double> _lengthOptions = const []; // from the db, sorted
+  // Length chips are STATIC (kStandardLengths); anything else = "Custom".
   List<String> _finishOptions = const []; // from the db (COLOR), sorted
   bool _itemsLoaded = false;
   bool _itemsRefreshing = true;
@@ -119,13 +119,10 @@ class _ReportsPageState extends State<ReportsPage> {
     _index = ItemIndex(rows);
     _catalog = ItemCatalog(rows);
 
-    final lengths = <int>{};
     final finishes = <String>{};
     for (final r in rows) {
-      if (r.length > 0) lengths.add((r.length * 1000).round()); // 6.3 == 6.3
       if (r.color.trim().isNotEmpty) finishes.add(r.color);
     }
-    _lengthOptions = (lengths.toList()..sort()).map((v) => v / 1000).toList();
     _finishOptions = finishes.toList()..sort(naturalCompare);
   }
 
@@ -254,7 +251,7 @@ class _ReportsPageState extends State<ReportsPage> {
     await showLengthFinishSheet(
       context,
       filters: _f,
-      lengths: _lengthOptions,
+      lengths: kStandardLengths,
       finishes: _finishOptions,
       countFor: _countFor,
     ),
