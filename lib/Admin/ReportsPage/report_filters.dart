@@ -36,6 +36,10 @@ String fmtCount(int n) => _countFmt.format(n);
 /// 1 -> "1 row", 19 -> "19 rows"
 String rowsText(int n) => n == 1 ? '1 row' : '${fmtCount(n)} rows';
 
+/// The standard bar lengths shown as chips in the Length sheet (static).
+/// Any other length is typed in the "Custom" chip.
+const List<double> kStandardLengths = [5.0, 5.7, 5.8, 6.0, 6.3, 6.8];
+
 /// Lengths are doubles: never compare them with ==
 bool sameLength(double a, double b) => (a - b).abs() < 0.001;
 
