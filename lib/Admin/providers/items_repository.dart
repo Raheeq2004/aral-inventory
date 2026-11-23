@@ -5,6 +5,37 @@ import 'package:firebase_database/firebase_database.dart';
 class ItemsRepository {
   final DatabaseReference _itemsRef = FirebaseDatabase.instance.ref('items');
 
+  // WHOLE TABLE (used by the Reports page)
+  List<ItemRow>? _cache;
+  List<ItemRow>? get cachedAll => _cache;
+
+  /// Reads the WHOLE `items` table (ONE read) and keeps it in [cachedAll].
+  /// Always goes to Firebase, because `Stock` changes all the time.
+  Future<List<ItemRow>> loadAll() async {
+    final snap = await _itemsRef.get();
+    final rows = <ItemRow>[];
+
+    void add(String key, Object? value) {
+      if (value is Map) {
+        rows.add(ItemRow(key: key, data: Map<String, dynamic>.from(value)));
+      }
+    }
+
+    if (snap.exists && snap.value != null) {
+      // Firebase returns a List when keys are 0,1,2... and a Map otherwise
+      // (a List can contain nulls where a row was deleted).
+      final raw = snap.value;
+      if (raw is Map) {
+        raw.forEach((k, v) => add('$k', v));
+      } else if (raw is List) {
+        for (var i = 0; i < raw.length; i++) {
+          add('$i', raw[i]);
+        }
+      }
+    }
+    return _cache = rows;
+  }
+
   /// Reads the item with [itemId] directly: items/<itemId - 1>, falling back to an indexed query.
   Future<ItemRow?> itemById(int itemId) async {
     final key = '${itemId - 1}';

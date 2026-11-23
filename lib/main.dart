@@ -1,4 +1,6 @@
 import 'package:aral_project/Admin/providers/filter_provider.dart';
+import 'package:aral_project/Admin/providers/items_repository.dart';
+import 'package:aral_project/Admin/providers/locations_repository.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Landing/landing_page.dart';
 import 'package:aral_project/Theme/theme.dart';
@@ -17,7 +19,16 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (context) => TransactionData()),
+        // ONE shared items / locations repository for the whole app
+        // (TransactionData and the Reports page use the same instances).
+        Provider(create: (_) => ItemsRepository()),
+        Provider(create: (_) => LocationsRepository()),
+        ChangeNotifierProvider(
+          create: (context) => TransactionData(
+            itemsRepo: context.read<ItemsRepository>(),
+            locationsRepo: context.read<LocationsRepository>(),
+          ),
+        ),
         ChangeNotifierProvider(
           create: (context) => TransactionFilterProvider(),
         ),
