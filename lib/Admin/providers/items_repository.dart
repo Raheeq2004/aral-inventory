@@ -61,6 +61,29 @@ class ItemsRepository {
     );
   }
 
+  /// ALL rows of [itemCode] (one row per LENGTH) — used by the keeper's QR scan.
+  ///
+  /// The QR label holds only the item code, and the same code can exist at
+  /// several lengths (e.g. 1BMBM010-AR801 at 5 m, 6 m and 7 m). So we return
+  /// every matching row and let the scanner decide:
+  ///   0 rows → not found · 1 row → done · 2+ rows → ask "which length?"
+  /// Indexed search (".indexOn": ["Item Code"]) → only the matches are sent.
+  Future<List<ItemRow>> findAllByCode(String itemCode) async {
+    final snap = await _itemsRef
+        .orderByChild('Item Code')
+        .equalTo(itemCode)
+        .get();
+    if (!snap.exists) return const [];
+    return [
+      for (final child in snap.children)
+        if (child.value is Map)
+          ItemRow(
+            key: child.key!,
+            data: Map<String, dynamic>.from(child.value as Map),
+          ),
+    ];
+  }
+
   /// Finds the row matching [itemCode] and [length] (used for QR scans & legacy transactions).
   Future<ItemRow?> findItem(String itemCode, double length) async {
     final snap = await _itemsRef
