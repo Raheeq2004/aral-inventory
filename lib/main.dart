@@ -62,7 +62,7 @@ class MyApp extends StatelessWidget {
       //   '/quantity': (context) =>
       //       const WorkerRouting(title: 'Quantity', child: QuantityPage()),
       // },
-     const LandingPage()
+          home: const LandingPage(),
     );
   }
 }
