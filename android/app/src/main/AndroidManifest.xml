@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The stock keeper scans QR labels with the camera -->
+    <uses-permission android:name="android.permission.CAMERA" />
     <application
         android:label="aral_project"
         android:name="${applicationName}"
