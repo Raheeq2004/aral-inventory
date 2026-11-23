@@ -1,4 +1,4 @@
-import 'package:aral_project/StockKeeper/Step3Page/components/progress_section.dart';
+import 'package:aral_project/StockKeeper/components/step_progress_bar.dart';
 import 'package:aral_project/StockKeeper/Step3Page/components/quick_add_button.dart';
 import 'package:aral_project/StockKeeper/Step3Page/components/summary_info_cards.dart';
 import 'package:aral_project/Theme/theme.dart';
