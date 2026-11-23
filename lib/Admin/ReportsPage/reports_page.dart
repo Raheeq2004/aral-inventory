@@ -1,17 +1,33 @@
 import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/Models/transactions_model.dart';
+import 'package:aral_project/Admin/ReportsPage/confirm_export_page.dart';
 import 'package:aral_project/Admin/ReportsPage/excel_export_services.dart';
-import 'package:aral_project/Admin/ReportsPage/items_table.dart';
-import 'package:aral_project/Admin/ReportsPage/warehouse_locations.dart';
+import 'package:aral_project/Admin/ReportsPage/filter_sheets.dart';
+import 'package:aral_project/Admin/ReportsPage/item_picker_page.dart';
+import 'package:aral_project/Admin/ReportsPage/location_tree.dart';
+import 'package:aral_project/Admin/ReportsPage/report_filters.dart';
+import 'package:aral_project/Admin/ReportsPage/report_preview.dart';
+import 'package:aral_project/Admin/ReportsPage/report_widgets.dart';
+import 'package:aral_project/Admin/providers/items_repository.dart';
+import 'package:aral_project/Admin/providers/locations_repository.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-enum ReportKind { log, stock }
+// =====================================================================
+// WHERE DOES THE PREVIEW TABLE LIVE?   (change ONE word to switch)
+//
+//   mainPage    -> preview under the filters; "Export" saves the file at once
+//   confirmPage -> main page = filters + "Export N rows"; the button opens a
+//                  "Confirm export" page that shows the preview + the button
+// =====================================================================
+enum PreviewPlacement { mainPage, confirmPage }
 
-enum Operations { all, inOnly, outOnly }
+const PreviewPlacement kPreviewPlacement = PreviewPlacement.mainPage;
+
+final DateFormat _dayMonth = DateFormat('d MMM');
 
 class ReportsPage extends StatefulWidget {
   const ReportsPage({super.key});
@@ -21,465 +37,631 @@ class ReportsPage extends StatefulWidget {
 }
 
 class _ReportsPageState extends State<ReportsPage> {
-  /// The 6 lengths (static, same ones as the Transactions filter sheet).
-  static const List<double> _lengths = [5.0, 5.7, 5.8, 6.0, 6.3, 6.8];
+  // the SHARED repositories (registered once in main.dart)
+  late final ItemsRepository _itemsRepo;
+  late final LocationsRepository _locationsRepo;
 
-  late DateTime _from;
-  late DateTime _to;
-  late DateTime _asOf; // "stock on a date"
   ReportKind _kind = ReportKind.log;
-  Operations operations = Operations.all;
-  String? _item; // item code, null = all items
-  double? _length; // null = all lengths
-  String? _finish; // = COLOR in the items table, null = all
-  String? _warehouse; // null = all
-  String? _rack; // null = all
-  String? _shelf; // null = all
-  String? _worker; // null = all
+  ReportFilters _f = const ReportFilters();
   bool _exporting = false;
 
-  List<List<String>> _dbPlaces =
-      []; // [warehouse, rack, shelf] from `locations`
-  List<ItemRow> _items = []; // the whole `items` table
+  // ---- items: read once, then everything below is derived ONCE ----
+  List<ItemRow> _items = const [];
+  ItemIndex _index = ItemIndex(const <ItemRow>[]); // transaction -> item row
+  ItemCatalog _catalog = ItemCatalog(const <ItemRow>[]); // the picker's index
+  List<double> _lengthOptions = const []; // from the db, sorted
+  List<String> _finishOptions = const []; // from the db (COLOR), sorted
   bool _itemsLoaded = false;
+  bool _itemsRefreshing = true;
   String? _itemsError;
+
+  // ---- locations ----
+  LocationTree _tree = LocationTree(const <List<String>>[]);
+
+  /// keys of the last items picked (most recent first)
+  final List<String> _recentKeys = [];
 
   @override
   void initState() {
     super.initState();
-    final now = DateTime.now();
-    _from = DateTime(now.year, now.month, 1);
-    _to = DateTime(now.year, now.month, now.day); // today
-    _asOf = _to;
-    _loadItems();
-    // all locations of the `locations` table
-    WarehouseLocations.loadParts().then((v) {
-      if (mounted) setState(() => _dbPlaces = v);
-    });
+    _itemsRepo = context.read<ItemsRepository>();
+    _locationsRepo = context.read<LocationsRepository>();
+
+    // Paint at once with what the repositories already know...
+    final cachedItems = _itemsRepo.cachedAll;
+    if (cachedItems != null) {
+      _useItems(cachedItems);
+      _itemsLoaded = true;
+    }
+    final cachedPlaces = _locationsRepo.cachedParts;
+    if (cachedPlaces != null) _tree = LocationTree(cachedPlaces);
+
+    // ...then refresh (the stock numbers change all the time).
+    _refreshItems();
+    _refreshLocations();
   }
 
-  Future<void> _loadItems() async {
+  Future<void> _refreshItems() async {
+    if (!_itemsRefreshing) setState(() => _itemsRefreshing = true);
     try {
-      final rows = await ItemsTable.loadAll();
+      final rows = await _itemsRepo.loadAll();
       if (!mounted) return;
       setState(() {
-        _items = rows;
+        _useItems(rows);
         _itemsLoaded = true;
+        _itemsRefreshing = false;
         _itemsError = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _itemsLoaded = true;
+        _itemsRefreshing = false;
         _itemsError = '$e';
       });
     }
   }
 
+  Future<void> _refreshLocations() async {
+    try {
+      final parts = await _locationsRepo.loadParts();
+      if (!mounted) return;
+      setState(() => _tree = LocationTree(parts));
+    } catch (_) {
+      // not fatal: the Location sheet falls back to the codes that appear
+      // in the transactions (see _treeFor)
+    }
+  }
+
+  /// Everything that depends only on the items table: computed ONCE here,
+  /// never inside build().
+  void _useItems(List<ItemRow> rows) {
+    _items = rows;
+    _index = ItemIndex(rows);
+    _catalog = ItemCatalog(rows);
+
+    final lengths = <int>{};
+    final finishes = <String>{};
+    for (final r in rows) {
+      if (r.length > 0) lengths.add((r.length * 1000).round()); // 6.3 == 6.3
+      if (r.color.trim().isNotEmpty) finishes.add(r.color);
+    }
+    _lengthOptions = (lengths.toList()..sort()).map((v) => v / 1000).toList();
+    _finishOptions = finishes.toList()..sort(naturalCompare);
+  }
+
   // ---------------------------------------------------------------------
   // filtering
   // ---------------------------------------------------------------------
-  bool _sameLength(double a) => (a - _length!).abs() < 0.001;
 
-  /// item code + length + finish of a TRANSACTION
-  /// (taken from its row in the items table when we can find it)
-  bool _matchesItem(TransactionModel tx, ItemIndex index) {
-    final row = index.forTx(tx);
+  /// A shelf from a location code can be "7" or "07": always 2 digits.
+  static String _padShelf(String s) =>
+      int.tryParse(s) != null ? s.padLeft(2, '0') : s;
+
+  bool _matchesTx(
+    TransactionModel tx,
+    ReportFilters f,
+    DateTime start,
+    DateTime endExclusive,
+  ) {
+    final t = tx.timestamp.toLocal(); // Jordan time, not UTC
+    if (t.isBefore(start) || !t.isBefore(endExclusive)) return false;
+
+    final dir = tx.direction.toUpperCase();
+    if (f.operations == Operations.inOnly && dir != 'IN') return false;
+    if (f.operations == Operations.outOnly && dir != 'OUT') return false;
+    if (f.worker != null && tx.stockKeeperId != f.worker) return false;
+
+    // item code + length + finish: from the row in the items table when we
+    // can find it, otherwise from the transaction itself
+    final row = _index.forTx(tx);
     final code = row?.code ?? tx.itemCode;
     final length = row?.length ?? tx.length;
     final color = row?.color ?? tx.color;
-    if (_item != null && code != _item) return false;
-    if (_length != null && !_sameLength(length)) return false;
-    if (_finish != null && color != _finish) return false;
+
+    final item = f.item;
+    if (item != null) {
+      if (row != null) {
+        if (row.key != item.key) return false;
+      } else if (code != item.code || !sameLength(length, item.length)) {
+        return false;
+      }
+    }
+    if (f.length != null && !sameLength(length, f.length!)) return false;
+    if (f.finish != null && color != f.finish) return false;
+
+    if (f.hasLocation) {
+      final p = ExcelExportService.locationParts(tx.locationCode);
+      if (f.warehouse != null && p[0] != f.warehouse) return false;
+      if (f.rack != null && p[1] != f.rack) return false;
+      if (f.shelf != null && _padShelf(p[2]) != f.shelf) return false;
+    }
     return true;
   }
 
-  /// item code + length + finish of an ITEM ROW (stock report)
-  bool _matchesRow(ItemRow r) {
-    if (_item != null && r.code != _item) return false;
-    if (_length != null && !_sameLength(r.length)) return false;
-    if (_finish != null && r.color != _finish) return false;
+  List<TransactionModel> _logRows(List<TransactionModel> all, ReportFilters f) {
+    final range = f.dateRange(DateTime.now());
+    final start = range.start;
+    final end = DateTime(range.end.year, range.end.month, range.end.day + 1);
+    return all.where((tx) => _matchesTx(tx, f, start, end)).toList();
+  }
+
+  bool _matchesRow(ItemRow r, ReportFilters f) {
+    if (f.item != null && r.key != f.item!.key) return false;
+    if (f.length != null && !sameLength(r.length, f.length!)) return false;
+    if (f.finish != null && r.color != f.finish) return false;
     return true;
   }
 
-  /// warehouse / rack / shelf are read from the location code
-  bool _matchesPlace(TransactionModel tx) {
-    final p = ExcelExportService.locationParts(tx.locationCode);
-    if (_warehouse != null && p[0] != _warehouse) return false;
-    if (_rack != null && p[1] != _rack) return false;
-    if (_shelf != null && p[2] != _shelf) return false;
-    return true;
+  /// "How many rows would these filters give?" (for the sheet buttons)
+  int _countFor(ReportFilters f) {
+    if (_kind == ReportKind.stock) {
+      var n = 0;
+      for (final r in _items) {
+        if (_matchesRow(r, f)) n++;
+      }
+      return n;
+    }
+    final all = context.read<TransactionData>().transactionDataList;
+    return _logRows(all, f).length;
   }
 
-  List<TransactionModel> _filterLog(
-    List<TransactionModel> all,
-    ItemIndex index,
-  ) {
-    final start = DateTime(_from.year, _from.month, _from.day);
-    final endExclusive = DateTime(_to.year, _to.month, _to.day + 1);
-
-    return all.where((tx) {
-      final t = tx.timestamp.toLocal();
-      if (t.isBefore(start) || !t.isBefore(endExclusive)) return false;
-
-      final dir = tx.direction.toUpperCase();
-      if (operations == Operations.inOnly && dir != 'IN') return false;
-      if (operations == Operations.outOnly && dir != 'OUT') return false;
-
-      if (!_matchesItem(tx, index) || !_matchesPlace(tx)) return false;
-      if (_worker != null && tx.stockKeeperId != _worker) return false;
-      return true;
-    }).toList();
+  /// The [k] newest rows, in ONE pass: O(n·k) instead of sorting everything.
+  static List<TransactionModel> _newest(List<TransactionModel> rows, int k) {
+    final top = <TransactionModel>[];
+    for (final tx in rows) {
+      var i = top.length;
+      while (i > 0 && top[i - 1].timestamp.isBefore(tx.timestamp)) {
+        i--;
+      }
+      if (i < k) {
+        top.insert(i, tx);
+        if (top.length > k) top.removeLast();
+      }
+    }
+    return top;
   }
 
-  Future<void> _pickDate({required bool isFrom}) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: isFrom ? _from : _to,
-      firstDate: isFrom ? DateTime(2020) : _from,
-      lastDate: isFrom ? _to : DateTime.now().add(const Duration(days: 365)),
+  // ---------------------------------------------------------------------
+  // opening the sheets / pages
+  // ---------------------------------------------------------------------
+  void _apply(ReportFilters? next) {
+    if (next != null && mounted) setState(() => _f = next);
+  }
+
+  Future<void> _openPeriod() async =>
+      _apply(await showPeriodSheet(context, filters: _f, countFor: _countFor));
+
+  Future<void> _openLocation() async {
+    final all = context.read<TransactionData>().transactionDataList;
+    _apply(
+      await showLocationSheet(
+        context,
+        filters: _f,
+        tree: _treeFor(all),
+        countFor: _countFor,
+      ),
     );
-    if (picked == null) return;
-    setState(() => isFrom ? _from = picked : _to = picked);
+  }
+
+  /// `locations` table; if it could not be read, the codes in the transactions
+  LocationTree _treeFor(List<TransactionModel> all) => !_tree.isEmpty
+      ? _tree
+      : LocationTree(
+          all.map((t) => ExcelExportService.locationParts(t.locationCode)),
+        );
+
+  Future<void> _openLengthFinish() async => _apply(
+    await showLengthFinishSheet(
+      context,
+      filters: _f,
+      lengths: _lengthOptions,
+      finishes: _finishOptions,
+      countFor: _countFor,
+    ),
+  );
+
+  Future<void> _openWorker() async {
+    final all = context.read<TransactionData>().transactionDataList;
+    final workers =
+        all
+            .map((t) => t.stockKeeperId)
+            .where((w) => w.trim().isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort(naturalCompare);
+    _apply(
+      await showWorkerSheet(
+        context,
+        filters: _f,
+        workers: workers,
+        countFor: _countFor,
+      ),
+    );
+  }
+
+  Future<void> _openItem() async {
+    if (!_itemsLoaded) return;
+    final recent = _recentKeys
+        .map(_catalog.entryForKey)
+        .whereType<ItemEntry>()
+        .toList();
+    final pick = await Navigator.of(context).push<ItemPick>(
+      MaterialPageRoute(
+        builder: (_) => ItemPickerPage(
+          catalog: _catalog,
+          recent: recent,
+          selected: _f.item,
+        ),
+      ),
+    );
+    if (pick == null || !mounted) return;
+    setState(() {
+      _f = _f.copyWith(item: pick.row);
+      final row = pick.row;
+      if (row != null) {
+        _recentKeys
+          ..remove(row.key)
+          ..insert(0, row.key);
+        if (_recentKeys.length > 5) _recentKeys.removeLast();
+      }
+    });
   }
 
   Future<void> _pickAsOf() async {
+    final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: _asOf,
+      initialDate: _f.asOfDate(now),
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(), // stock in the future makes no sense
+      lastDate: now, // stock in the future makes no sense
     );
-    if (picked == null) return;
-    setState(() => _asOf = picked);
+    if (picked == null || !mounted) return;
+    final isToday = DateUtils.isSameDay(picked, now);
+    setState(() => _f = _f.copyWith(asOf: isToday ? null : picked));
   }
 
+  void _resetAll() {
+    final before = _f;
+    setState(() => _f = const ReportFilters());
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppTheme.textColorPrimary,
+          duration: const Duration(seconds: 4),
+          content: const Text(
+            'Filters cleared',
+            style: TextStyle(color: Colors.white),
+          ),
+          action: SnackBarAction(
+            label: 'Undo',
+            textColor: const Color(0xFFF7A35C),
+            onPressed: () {
+              if (mounted) setState(() => _f = before);
+            },
+          ),
+        ),
+      );
+  }
+
+  // ---------------------------------------------------------------------
+  // export
+  // ---------------------------------------------------------------------
   Future<void> _export(
-    List<TransactionModel> logRows,
-    List<StockLine> stockLines,
-  ) async {
-    setState(() => _exporting = true);
-    if (_kind == ReportKind.stock) {
+    BuildContext ctx, {
+    required bool isStock,
+    required List<TransactionModel> logRows,
+    required List<StockLine> stockLines,
+  }) async {
+    final now = DateTime.now();
+    if (isStock) {
       await ExcelExportService.exportStockAndNotify(
-        context: context,
+        context: ctx,
         lines: stockLines,
         items: _items,
-        asOf: _asOf,
+        asOf: _f.asOfDate(now),
       );
     } else {
+      final range = _f.dateRange(now);
       await ExcelExportService.exportAndNotify(
-        context: context,
+        context: ctx,
         transactions: logRows,
         items: _items,
-        from: _from,
-        to: _to,
+        from: range.start,
+        to: range.end,
       );
     }
-    if (mounted) setState(() => _exporting = false);
   }
 
+  Future<void> _exportHere({
+    required bool isStock,
+    required List<TransactionModel> logRows,
+    required List<StockLine> stockLines,
+  }) async {
+    setState(() => _exporting = true);
+    try {
+      await _export(
+        context,
+        isStock: isStock,
+        logRows: logRows,
+        stockLines: stockLines,
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // the preview (a ReportPreview widget: see report_preview.dart)
+  // ---------------------------------------------------------------------
+  Widget _buildPreview({
+    required bool isStock,
+    required List<TransactionModel> logRows,
+    required List<StockLine> stockLines,
+    required String fileName,
+    required int total,
+    required int limit,
+  }) {
+    if (isStock) {
+      return ReportPreview(
+        fileName: fileName,
+        totalRows: total,
+        headers: const ['Item', 'Len', 'Stock'],
+        columnFlex: const [3, 1, 1.2],
+        emptyTitle: 'No items match.',
+        emptyHint: 'Try fewer filters.',
+        rows: [
+          for (final l in stockLines.take(limit))
+            [
+              l.item.code,
+              l.item.length > 0 ? fmtLen(l.item.length) : '',
+              '${l.stock}',
+            ],
+        ],
+      );
+    }
+
+    return ReportPreview(
+      fileName: fileName,
+      totalRows: total,
+      headers: const ['Date', 'Item', 'Move', 'Qty'],
+      columnFlex: const [1.3, 3, 1, 0.9],
+      // IN = green, OUT = red
+      cellColor: (col, value) => col == 2
+          ? (value == 'IN' ? AppTheme.successColor : AppTheme.errorColor)
+          : null,
+      rows: [
+        for (final tx in _newest(logRows, limit))
+          [
+            _dayMonth.format(tx.timestamp.toLocal()),
+            _index.forTx(tx)?.code ?? tx.itemCode,
+            tx.direction.toUpperCase(),
+            '${tx.quantity}',
+          ],
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // build
+  // ---------------------------------------------------------------------
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-
     return Consumer<TransactionData>(
       builder: (context, data, child) {
-        final all = data.transactionDataList;
         final isStock = _kind == ReportKind.stock;
-        final index = ItemIndex(_items);
+        final all = data.transactionDataList;
+        final now = DateTime.now();
 
-        final logRows = isStock ? <TransactionModel>[] : _filterLog(all, index);
+        final logRows = isStock
+            ? const <TransactionModel>[]
+            : _logRows(all, _f);
         final stockLines = isStock
             ? ExcelExportService.stockAsOf(
                 allItems: _items,
-                items: _items.where(_matchesRow),
+                items: _items.where((r) => _matchesRow(r, _f)),
                 transactions: all,
-                asOf: _asOf,
+                asOf: _f.asOfDate(now),
               )
-            : <StockLine>[];
+            : const <StockLine>[];
 
-        final matchCount = isStock ? stockLines.length : logRows.length;
-        final count = NumberFormat('#,##0').format(matchCount);
+        final total = isStock ? stockLines.length : logRows.length;
+        final range = _f.dateRange(now);
         final fileName = isStock
-            ? ExcelExportService.stockFileNameFor(_asOf)
-            : ExcelExportService.fileNameFor(from: _from, to: _to);
-        final ready = _itemsLoaded && _itemsError == null && !data.isLoading;
-        final canExport = ready && !_exporting && matchCount > 0;
+            ? ExcelExportService.stockFileNameFor(_f.asOfDate(now))
+            : ExcelExportService.fileNameFor(from: range.start, to: range.end);
 
-        // ---- filter options ----
-        // item codes + finishes: from the `items` table
-        final itemCodes = _distinct(_items.map((r) => r.code));
-        final finishes = _distinct(_items.map((r) => r.color));
+        final ready =
+            _itemsLoaded &&
+            _itemsError == null &&
+            !_itemsRefreshing &&
+            !data.isLoading;
+        final canExport = ready && !_exporting && total > 0;
+        final exportLabel = !ready
+            ? 'Loading…'
+            : isStock
+            ? 'Export stock'
+            : 'Export ${rowsText(total)}';
 
-        // warehouse -> rack -> shelf: from the `locations` table
-        // (if it could not be read, fall back to the codes in the
-        // transactions). Rack / shelf lists narrow down when a warehouse /
-        // rack is picked.
-        final places = _dbPlaces.isNotEmpty
-            ? _dbPlaces
-            : all
-                  .map((t) => ExcelExportService.locationParts(t.locationCode))
-                  .toList();
-        final warehouses = _distinct(places.map((p) => p[0]));
-        final racks = _distinct(
-          places
-              .where((p) => _warehouse == null || p[0] == _warehouse)
-              .map((p) => p[1]),
+        final active = _f.activeCount(_kind);
+        final previewOnMain = kPreviewPlacement == PreviewPlacement.mainPage;
+
+        // ONE preview widget; it is placed below, either on this page or on
+        // the confirmation page.
+        final preview = _buildPreview(
+          isStock: isStock,
+          logRows: logRows,
+          stockLines: stockLines,
+          fileName: fileName,
+          total: total,
+          limit: previewOnMain ? kPreviewRows : kConfirmPreviewRows,
         );
-        final shelves = _distinct(
-          places
-              .where(
-                (p) =>
-                    (_warehouse == null || p[0] == _warehouse) &&
-                    (_rack == null || p[1] == _rack),
-              )
-              .map((p) => p[2]),
-        );
-        final workers = _distinct(all.map((t) => t.stockKeeperId));
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // title and description
-              Text(
-                isStock ? 'Stock on a date' : 'Export transaction logs',
-                style: textTheme.displaySmall?.copyWith(fontSize: 24),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                isStock
-                    ? 'The stock of every item on the chosen day, also the '
-                          'items with zero stock.'
-                    : 'Create an Excel sheet with the item details, '
-                          'locations, workers, IN/OUT and quantities.',
-                style: textTheme.bodyLarge?.copyWith(
-                  color: AppTheme.textColorSecondary,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // which report
-              _label(context, 'Report'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              // ---- which report ----
+              Row(
                 children: [
-                  _chip(
-                    'Transaction log',
-                    !isStock,
-                    () => setState(() => _kind = ReportKind.log),
+                  Expanded(
+                    child: _KindCard(
+                      icon: Icons.swap_horiz_rounded,
+                      title: 'Transaction log',
+                      subtitle: 'Every IN / OUT',
+                      selected: !isStock,
+                      onTap: () => setState(() => _kind = ReportKind.log),
+                    ),
                   ),
-                  _chip(
-                    'Stock on a date',
-                    isStock,
-                    () => setState(() => _kind = ReportKind.stock),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _KindCard(
+                      icon: Icons.inventory_2_outlined,
+                      title: 'Stock on a date',
+                      subtitle: 'What was in stock',
+                      selected: isStock,
+                      onTap: () => setState(() => _kind = ReportKind.stock),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
 
-              // dates
-              if (isStock) ...[
-                _label(context, 'As of'),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: _DateButton(date: _asOf, onTap: _pickAsOf),
-                ),
-              ] else ...[
-                Row(
-                  children: [
-                    Expanded(child: _label(context, 'From')),
-                    const SizedBox(width: 12),
-                    Expanded(child: _label(context, 'To')),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _DateButton(
-                        date: _from,
-                        onTap: () => _pickDate(isFrom: true),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _DateButton(
-                        date: _to,
-                        onTap: () => _pickDate(isFrom: false),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 24),
-
-              // IN / OUT (log only)
+              // ---- All / IN / OUT (log only) ----
               if (!isStock) ...[
-                _label(context, 'Transactions'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _chip(
-                      'All',
-                      operations == Operations.all,
-                      () => setState(() => operations = Operations.all),
-                    ),
-                    _chip(
-                      'IN only',
-                      operations == Operations.inOnly,
-                      () => setState(() => operations = Operations.inOnly),
-                    ),
-                    _chip(
-                      'OUT only',
-                      operations == Operations.outOnly,
-                      () => setState(() => operations = Operations.outOnly),
-                    ),
-                  ],
+                _OperationsSwitch(
+                  value: _f.operations,
+                  onChanged: (v) =>
+                      setState(() => _f = _f.copyWith(operations: v)),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 12),
               ],
 
-              // item: drop-down with search, shows only the item code
-              _label(context, 'Item'),
-              const SizedBox(height: 8),
-              _itemPicker(itemCodes),
-              const SizedBox(height: 24),
-
-              // length: 6 static values
-              _label(context, 'Length'),
-              const SizedBox(height: 8),
-              _singleSelect<double>(
-                _lengths,
-                _length,
-                (v) => _length = v,
-                labelOf: (v) => v.toStringAsFixed(1),
+              // ---- the filter rows ----
+              _CardShell(
+                child: Column(
+                  children: [
+                    if (isStock)
+                      _FilterRow(
+                        icon: Icons.calendar_today_outlined,
+                        label: 'Date',
+                        value: _f.asOf == null
+                            ? 'Today, ${_dayMonth.format(now)}'
+                            : DateFormat('d MMM yyyy').format(_f.asOf!),
+                        tone: _f.asOf == null ? _Tone.normal : _Tone.set,
+                        onTap: _pickAsOf,
+                      )
+                    else
+                      _FilterRow(
+                        icon: Icons.calendar_today_outlined,
+                        label: 'Period',
+                        value: _f.periodValue(now),
+                        tone: _f.period == ReportPeriod.thisMonth
+                            ? _Tone.normal
+                            : _Tone.set,
+                        onTap: _openPeriod,
+                      ),
+                    _FilterRow(
+                      icon: Icons.inventory_2_outlined,
+                      label: 'Item',
+                      value: !_itemsLoaded ? 'Loading…' : _f.itemValue,
+                      tone: _f.item == null ? _Tone.unset : _Tone.set,
+                      onTap: _openItem,
+                    ),
+                    // the stock is kept per item, not per location
+                    if (!isStock)
+                      _FilterRow(
+                        icon: Icons.location_on_outlined,
+                        label: 'Location',
+                        value: _f.locationValue,
+                        tone: _f.hasLocation ? _Tone.set : _Tone.unset,
+                        onTap: _openLocation,
+                      ),
+                    _FilterRow(
+                      icon: Icons.straighten,
+                      label: 'Length · finish',
+                      value: _f.lengthFinishValue,
+                      tone: (_f.length != null || _f.finish != null)
+                          ? _Tone.set
+                          : _Tone.unset,
+                      onTap: _openLengthFinish,
+                      last: isStock,
+                    ),
+                    if (!isStock)
+                      _FilterRow(
+                        icon: Icons.person_outline,
+                        label: 'Worker',
+                        value: _f.workerValue,
+                        tone: _f.worker == null ? _Tone.unset : _Tone.set,
+                        onTap: _openWorker,
+                        last: true,
+                      ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 24),
 
-              // finish (COLOR in the db)
-              _label(context, 'Finish'),
-              const SizedBox(height: 8),
-              _singleSelect<String>(finishes, _finish, (v) => _finish = v),
-              const SizedBox(height: 24),
-
-              // warehouse -> rack -> shelf (transaction log only: the stock
-              // is kept per item, not per location)
-              if (!isStock) ...[
-                _label(context, 'Warehouse'),
-                const SizedBox(height: 8),
-                _singleSelect<String>(warehouses, _warehouse, (v) {
-                  _warehouse = v;
-                  _rack = null; // old rack / shelf may not exist here
-                  _shelf = null;
-                }),
-                const SizedBox(height: 24),
-                _label(context, 'Rack'),
-                const SizedBox(height: 8),
-                _singleSelect<String>(racks, _rack, (v) {
-                  _rack = v;
-                  _shelf = null;
-                }),
-                const SizedBox(height: 24),
-                _label(context, 'Shelf'),
-                const SizedBox(height: 8),
-                _singleSelect<String>(shelves, _shelf, (v) => _shelf = v),
-                const SizedBox(height: 24),
-
-                // worker
-                _label(context, 'Worker'),
-                const SizedBox(height: 8),
-                _singleSelect<String>(workers, _worker, (v) => _worker = v),
-                const SizedBox(height: 24),
-              ],
-              const SizedBox(height: 4),
-
-              // summary card
-              Card(
-                color: theme.colorScheme.primaryContainer.withValues(
-                  alpha: 0.35,
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
+              // ---- "N filters on · Reset all" ----
+              if (active > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
                   child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.bar_chart_rounded,
-                          color: theme.colorScheme.primary,
-                          size: 20,
-                        ),
+                      Text(
+                        '$active filter${active == 1 ? '' : 's'} on',
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _itemsError != null
-                                  ? 'Could not read the items table'
-                                  : !ready
-                                  ? 'Loading...'
-                                  : isStock
-                                  ? '$count items'
-                                  : '$count transactions match',
-                              style: textTheme.bodyLarge?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              _itemsError ?? fileName,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: textTheme.bodySmall,
-                            ),
-                          ],
+                      const Spacer(),
+                      TextButton(
+                        onPressed: _resetAll,
+                        child: const Text(
+                          'Reset all',
+                          style: TextStyle(
+                            color: AppTheme.secondaryColor,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
 
-              // export
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: canExport
-                      ? () => _export(logRows, stockLines)
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                  ),
-                  icon: _exporting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+              if (_itemsError != null) ...[
+                const SizedBox(height: 12),
+                _ErrorCard(message: _itemsError!, onRetry: _refreshItems),
+              ],
+              const SizedBox(height: 12),
+
+              // ---- preview on THIS page ----
+              if (previewOnMain) ...[preview, const SizedBox(height: 12)],
+
+              // ---- export ----
+              ExportButton(
+                label: exportLabel,
+                enabled: canExport,
+                busy: _exporting,
+                onPressed: previewOnMain
+                    ? () => _exportHere(
+                        isStock: isStock,
+                        logRows: logRows,
+                        stockLines: stockLines,
+                      )
+                    // preview on the CONFIRMATION page: open it
+                    : () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ConfirmExportPage(
+                            preview: preview,
+                            buttonLabel: exportLabel,
+                            onExport: (ctx) => _export(
+                              ctx,
+                              isStock: isStock,
+                              logRows: logRows,
+                              stockLines: stockLines,
+                            ),
                           ),
-                        )
-                      : const Icon(Icons.download_rounded, size: 20),
-                  label: Text(_exporting ? 'Exporting...' : 'Export to Excel'),
-                ),
+                        ),
+                      ),
               ),
             ],
           ),
@@ -487,110 +669,282 @@ class _ReportsPageState extends State<ReportsPage> {
       },
     );
   }
+}
 
-  static List<String> _distinct(Iterable<String> values) =>
-      values.where((v) => v.trim().isNotEmpty).toSet().toList()..sort(_natural);
+// =====================================================================
+// small widgets of the main page
+// =====================================================================
 
-  /// A2 before A10 (instead of A10 before A2)
-  static int _natural(String a, String b) {
-    final re = RegExp(r'(\d+)|(\D+)');
-    final pa = re.allMatches(a).map((m) => m[0]!).toList();
-    final pb = re.allMatches(b).map((m) => m[0]!).toList();
-    for (var i = 0; i < pa.length && i < pb.length; i++) {
-      final nx = int.tryParse(pa[i]);
-      final ny = int.tryParse(pb[i]);
-      final c = (nx != null && ny != null)
-          ? nx.compareTo(ny)
-          : pa[i].compareTo(pb[i]);
-      if (c != 0) return c;
-    }
-    return pa.length.compareTo(pb.length);
-  }
+/// White card with the thin border (a Material, so the ripples show).
+class _CardShell extends StatelessWidget {
+  const _CardShell({required this.child});
+  final Widget child;
 
-  /// "All" + one chip per option. Only one can be selected at a time.
-  Widget _singleSelect<T>(
-    List<T> options,
-    T? selected,
-    void Function(T?) onChanged, {
-    String Function(T)? labelOf,
-  }) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    children: [
-      _chip('All', selected == null, () => setState(() => onChanged(null))),
-      for (final o in options)
-        _chip(
-          labelOf != null ? labelOf(o) : '$o',
-          selected == o,
-          () => setState(() => onChanged(o)),
-        ),
-    ],
-  );
-
-  /// Drop-down list you can type in to search. Shows ONLY the item code
-  /// (one entry per code, from the `items` table).
-  Widget _itemPicker(List<String> codes) {
-    return DropdownMenu<String?>(
-      expandedInsets: EdgeInsets.zero, // full width
-      initialSelection: _item,
-      enableFilter: true,
-      requestFocusOnTap: true, // lets the user type
-      hintText: _itemsLoaded ? 'Search item code' : 'Loading items...',
-      leadingIcon: const Icon(Icons.search),
-      menuHeight: 320,
-      // "contains" search
-      filterCallback: (entries, filter) {
-        final q = filter.trim().toLowerCase();
-        if (q.isEmpty) return entries;
-        return entries.where((e) => e.label.toLowerCase().contains(q)).toList();
-      },
-      onSelected: (value) => setState(() => _item = value),
-      dropdownMenuEntries: [
-        const DropdownMenuEntry<String?>(value: null, label: 'All items'),
-        for (final code in codes)
-          DropdownMenuEntry<String?>(value: code, label: code),
-      ],
-    );
-  }
-
-  Widget _label(BuildContext context, String text) => Text(
-    text,
-    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-      fontWeight: FontWeight.w600,
-      color: AppTheme.textColorPrimary,
+  @override
+  Widget build(BuildContext context) => Material(
+    color: AppTheme.surfaceColor,
+    clipBehavior: Clip.antiAlias,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+      side: const BorderSide(color: AppTheme.borderColor),
     ),
-  );
-
-  /// Filter chip
-  Widget _chip(String label, bool selected, VoidCallback onTap) => FilterChip(
-    label: Text(label),
-    selected: selected,
-    showCheckmark: true,
-    backgroundColor: AppTheme.surfaceColor,
-    onSelected: (_) => onTap(),
+    child: child,
   );
 }
 
-class _DateButton extends StatelessWidget {
-  final DateTime date;
-  final VoidCallback onTap;
+/// "Transaction log" / "Stock on a date".
+/// Selected = ORANGE BORDER only (white background).
+class _KindCard extends StatelessWidget {
+  const _KindCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
 
-  const _DateButton({required this.date, required this.onTap});
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onTap,
-      icon: const Icon(Icons.schedule_rounded, size: 20),
-      label: Text(DateFormat('dd MMM yyyy').format(date)),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: AppTheme.surfaceColor,
-        foregroundColor: AppTheme.textColorPrimary,
-        side: const BorderSide(color: AppTheme.borderColor, width: 1.5),
-        minimumSize: const Size.fromHeight(56),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+    return Material(
+      color: AppTheme.surfaceColor,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected ? AppTheme.secondaryColor : AppTheme.borderColor,
+          width: selected ? 1.5 : 1,
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: selected
+                    ? AppTheme.secondaryColor
+                    : AppTheme.textColorSecondary,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.textColorPrimary,
+                ),
+              ),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// All / IN / OUT. A selected option is a white pill on a grey track.
+class _OperationsSwitch extends StatelessWidget {
+  const _OperationsSwitch({required this.value, required this.onChanged});
+
+  final Operations value;
+  final ValueChanged<Operations> onChanged;
+
+  static const _labels = {
+    Operations.all: 'All',
+    Operations.inOnly: 'IN',
+    Operations.outOnly: 'OUT',
+  };
+
+  Color _colorOf(Operations o) {
+    switch (o) {
+      case Operations.all:
+        return AppTheme.textColorPrimary;
+      case Operations.inOnly:
+        return AppTheme.successColor;
+      case Operations.outOnly:
+        return AppTheme.errorColor;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF1F6),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          for (final o in Operations.values)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => onChanged(o),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: o == value ? Colors.white : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: o == value
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x14000000),
+                              blurRadius: 3,
+                              offset: Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Text(
+                    _labels[o]!,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: o == value
+                          ? FontWeight.w700
+                          : FontWeight.w500,
+                      color: o == value
+                          ? _colorOf(o)
+                          : AppTheme.textColorSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// How a row's value looks:
+///  unset  -> grey ("All items", "Any")
+///  normal -> dark, regular (a default that is not a filter: "This month")
+///  set    -> BLACK + BOLD (the admin chose something)
+enum _Tone { unset, normal, set }
+
+class _FilterRow extends StatelessWidget {
+  const _FilterRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.tone,
+    required this.onTap,
+    this.last = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final _Tone tone;
+  final VoidCallback onTap;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          border: last
+              ? null
+              : const Border(bottom: BorderSide(color: AppTheme.borderColor)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppTheme.textColorSecondary),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+                color: AppTheme.textColorPrimary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                value,
+                textAlign: TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: tone == _Tone.set
+                      ? FontWeight.w700
+                      : FontWeight.w400,
+                  color: tone == _Tone.unset
+                      ? AppTheme.textColorSecondary
+                      : AppTheme.textColorPrimary,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.chevron_right,
+              size: 20,
+              color: AppTheme.textColorSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppTheme.warningContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: const BorderSide(color: AppTheme.warningBorder),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Could not read the items table: $message',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: AppTheme.warningColor,
+                ),
+              ),
+            ),
+            TextButton(onPressed: onRetry, child: const Text('Retry')),
+          ],
+        ),
       ),
     );
   }
