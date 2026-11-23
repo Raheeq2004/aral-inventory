@@ -2,7 +2,7 @@ import 'package:aral_project/Admin/DashboardPage/admin_dashboard.dart';
 import 'package:aral_project/Admin/ReportsPage/reports_page.dart';
 import 'package:aral_project/Admin/TransactionPage/all_transactions.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
-import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
+import 'package:aral_project/connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 

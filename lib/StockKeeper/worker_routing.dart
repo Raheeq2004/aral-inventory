@@ -1,4 +1,4 @@
-import 'package:aral_project/Internet%20Connectivity/connectivity_badge.dart';
+import 'package:aral_project/connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';
 
 class WorkerRouting extends StatefulWidget {
