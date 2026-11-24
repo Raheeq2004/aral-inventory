@@ -2,6 +2,7 @@ import 'dart:async'; // TimeoutException
 
 import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/providers/items_repository.dart';
+import 'package:aral_project/Admin/providers/locations_repository.dart';
 import 'package:aral_project/StockKeeper/models/scan_session.dart';
 import 'package:flutter/foundation.dart'; // ChangeNotifier
 
@@ -24,6 +25,10 @@ class ProductLookup {
   final List<ItemRow> rows; // the matching rows (empty when not found)
 }
 
+/// What happened when we looked up a scanned location code (Step 2).
+/// Simpler than products: a location code is unique, so it's found or not.
+enum LocationStatus { found, notFound, offline }
+
 /// The "brain" of the stock keeper's 3 steps.
 ///
 /// ChangeNotifier (same idea as TransactionData on the admin side):
@@ -33,10 +38,14 @@ class ProductLookup {
 /// The pages only SHOW things; the decisions live here. That keeps the
 /// pages simple and makes this class easy to test later.
 class ScanFlowProvider extends ChangeNotifier {
-  ScanFlowProvider({required ItemsRepository itemsRepo})
-    : _itemsRepo = itemsRepo;
+  ScanFlowProvider({
+    required ItemsRepository itemsRepo,
+    required LocationsRepository locationsRepo,
+  }) : _itemsRepo = itemsRepo,
+       _locationsRepo = locationsRepo;
 
   final ItemsRepository _itemsRepo;
+  final LocationsRepository _locationsRepo;
 
   ScanSession _session = ScanSession.empty;
   ScanSession get session => _session;
@@ -95,6 +104,46 @@ class ScanFlowProvider extends ChangeNotifier {
   void selectItem(ItemRow row) {
     _session = _session.copyWith(item: row, clearLocation: true);
     notifyListeners();
+  }
+
+  // =================================================================
+  // STEP 2 — location
+  // =================================================================
+
+  /// Location codes look like "WH1-B3-02": WH<number>-<letter><number>-<2 digits>.
+  /// RegExp check BEFORE asking Firebase: a code with the wrong shape
+  /// (e.g. a PRODUCT label scanned by mistake) can't exist → no need to ask.
+  static final RegExp _locationShape = RegExp(r'^WH\d+-[A-Z]\d+-\d{2}$');
+
+  /// true if [code] looks like a location (used to warn "this is a product
+  /// label, not a shelf label").
+  static bool looksLikeLocation(String code) =>
+      _locationShape.hasMatch(code.trim().toUpperCase());
+
+  /// Looks up a scanned (or typed) location code in `locations`
+  /// (indexed search on "Location Code"). When found it is saved in the
+  /// session, so the Quantity page can show it.
+  Future<LocationStatus> lookupLocation(String raw) async {
+    final code = raw.trim().toUpperCase();
+    if (!looksLikeLocation(code)) return LocationStatus.notFound;
+
+    _isLooking = true;
+    notifyListeners();
+    try {
+      final exists = await _locationsRepo
+          .locationExists(code)
+          .timeout(const Duration(seconds: 10));
+      if (!exists) return LocationStatus.notFound;
+      _session = _session.copyWith(locationCode: code);
+      return LocationStatus.found;
+    } on TimeoutException {
+      return LocationStatus.offline;
+    } catch (_) {
+      return LocationStatus.offline;
+    } finally {
+      _isLooking = false;
+      notifyListeners();
+    }
   }
 
   // =================================================================

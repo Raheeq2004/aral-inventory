@@ -37,8 +37,10 @@ void main() async {
         // STOCK KEEPER: the scan flow (Step 1 product → Step 2 location →
         // Step 3 quantity). Uses the SAME items repository as the admin.
         ChangeNotifierProvider(
-          create: (context) =>
-              ScanFlowProvider(itemsRepo: context.read<ItemsRepository>()),
+          create: (context) => ScanFlowProvider(
+            itemsRepo: context.read<ItemsRepository>(),
+            locationsRepo: context.read<LocationsRepository>(),
+          ),
         ),
       ],
       child: const MyApp(),
@@ -62,7 +64,7 @@ class MyApp extends StatelessWidget {
       //   '/quantity': (context) =>
       //       const WorkerRouting(title: 'Quantity', child: QuantityPage()),
       // },
-          home: const LandingPage(),
+               home: const LandingPage(),
     );
   }
 }

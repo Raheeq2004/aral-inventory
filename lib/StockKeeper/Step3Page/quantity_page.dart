@@ -1,9 +1,12 @@
 import 'package:aral_project/StockKeeper/components/step_progress_bar.dart';
 import 'package:aral_project/StockKeeper/Step3Page/components/quick_add_button.dart';
 import 'package:aral_project/StockKeeper/Step3Page/components/summary_info_cards.dart';
+import 'package:aral_project/StockKeeper/models/scan_labels.dart';
+import 'package:aral_project/StockKeeper/providers/scan_flow_provider.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
 class QuantityPage extends StatefulWidget {
   const QuantityPage({super.key});
@@ -40,6 +43,12 @@ class _QuantityPageState extends State<QuantityPage> {
   Widget build(BuildContext context) {
     final bool isInOperation = _selectedOperation == 'IN';
 
+    // NEW (scanner hand-off): the product + location scanned in Steps 1–2.
+    // watch → this page rebuilds if the session changes.
+    final session = context.watch<ScanFlowProvider>().session;
+    final item = session.item; // null only if this page is opened directly
+    final location = session.locationCode;
+
     return Form(
       key: _formKey,
       child: Column(
@@ -65,20 +74,22 @@ class _QuantityPageState extends State<QuantityPage> {
                           const StepProgressBar(currentStep: 3),
                           SizedBox(height: 16),
                           // 2. Product Summary Card
-                          const SummaryInfoCard(
+                          SummaryInfoCard(
                             icon: Icons.qr_code_2_rounded,
                             categoryLabel: 'PRODUCT',
-                            title: 'Aluminum Profile 6063-T5',
-                            subtitle: 'ITM-AL-6063 · 6 m · Silver anodized',
+                            title: item?.code ?? '—',
+                            subtitle: item == null ? '' : productSubtitle(item),
                           ),
                           const SizedBox(height: 12),
 
                           // 3. Location Summary Card
-                          const SummaryInfoCard(
+                          SummaryInfoCard(
                             icon: Icons.location_on_outlined,
                             categoryLabel: 'LOCATION',
-                            title: 'Warehouse 1 · Rack B3 · Shelf 2',
-                            subtitle: 'LOC-WH1-B3-S2',
+                            title: location == null
+                                ? '—'
+                                : locationTitle(location),
+                            subtitle: location ?? '',
                           ),
                           const SizedBox(height: 16),
                           // 4. Operation Section
@@ -311,16 +322,19 @@ class _QuantityPageState extends State<QuantityPage> {
                           const SizedBox(height: 14),
 
                           // 7. Available Stock Row
-                          const Row(
+                          // Stock is stored per ITEM (code + length) in
+                          // `items`, not per location → "In stock", not
+                          // "at this location".
+                          Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.inventory_2_outlined,
                                 size: 18,
                                 color: AppTheme.textColorSecondary,
                               ),
-                              SizedBox(width: 8),
+                              const SizedBox(width: 8),
                               Text(
-                                'Available at this location: 12 pcs',
+                                'In stock: ${item?.quantity ?? 0} pcs',
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: AppTheme.textColorSecondary,

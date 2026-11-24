@@ -207,8 +207,9 @@ class _RoundButton extends StatelessWidget {
     return Tooltip(
       message: tooltip,
       child: Material(
-        // active (torch on / zoomed) → white circle, else dark glass
-        color: active ? Colors.white : Colors.white.withValues(alpha: 0.18),
+        // active (torch on / zoomed) → white circle, else a DARK circle
+        // (dark stays visible on bright labels and white screens too)
+        color: active ? Colors.white : Colors.black.withValues(alpha: 0.55),
         shape: const CircleBorder(),
         child: InkWell(
           customBorder: const CircleBorder(),
