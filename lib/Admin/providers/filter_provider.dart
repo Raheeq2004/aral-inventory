@@ -6,6 +6,7 @@ class TransactionFilterProvider extends ChangeNotifier {
   String? _selectedMovement;
   String? _selectedWarehouse;
   double? _selectedLength;
+  bool _isCustomLength = false;
   String? _selectedSort;
 
   // Getters
@@ -14,6 +15,7 @@ class TransactionFilterProvider extends ChangeNotifier {
   String? get selectedMovement => _selectedMovement;
   String? get selectedWarehouse => _selectedWarehouse;
   double? get selectedLength => _selectedLength;
+  bool get isCustomLength => _isCustomLength;
   String? get selectedSort => _selectedSort;
 
   // Count of active filters (excluding sort or including depending on preference)
@@ -32,9 +34,27 @@ class TransactionFilterProvider extends ChangeNotifier {
 
   // Setters / Actions
 
-  // Setter for Length
-  void setLength(double? length) {
-    _selectedLength = (_selectedLength == length) ? null : length;
+  //Setter for Length (handles both preset chips and custom text input)
+  void setLength(double? length, {bool isCustom = false}) {
+    if (isCustom) {
+      _isCustomLength = true;
+      _selectedLength = length;
+    } else {
+      _isCustomLength = false;
+      _selectedLength = (_selectedLength == length) ? null : length;
+    }
+    notifyListeners();
+  }
+
+  // <-- ADDED: Toggles the Custom length chip on/off
+  void selectCustomLength() {
+    if (_isCustomLength) {
+      _isCustomLength = false;
+      _selectedLength = null;
+    } else {
+      _isCustomLength = true;
+      _selectedLength = null; // Clear any previously selected preset
+    }
     notifyListeners();
   }
 
@@ -95,6 +115,7 @@ class TransactionFilterProvider extends ChangeNotifier {
     _selectedMovement = null; // FIX: was not cleared by Reset / Clear all
     _selectedWarehouse = null;
     _selectedLength = null;
+    _isCustomLength = false;
     _selectedSort = null;
     notifyListeners();
   }

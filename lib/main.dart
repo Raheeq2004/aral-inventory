@@ -10,7 +10,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-
 void main() async {
   // 1. Ensure Flutter bindings are initialized
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,7 +63,7 @@ class MyApp extends StatelessWidget {
       //   '/quantity': (context) =>
       //       const WorkerRouting(title: 'Quantity', child: QuantityPage()),
       // },
-               home: const LandingPage(),
+      home: const LandingPage(),
     );
   }
 }
