@@ -10,11 +10,21 @@ String lengthText(double l) {
   return '${l == l.roundToDouble() ? l.toStringAsFixed(0) : l} m';
 }
 
-/// Second line of the PRODUCT card: "6 m · MF · 114 in stock"
+/// The text that goes INSIDE a product QR label: "ITM-" + the item id.
+///   1201 → "ITM-1201"
+/// ONE place builds it, so the label generator and the scanner can never
+/// disagree about the format.
+String productLabel(int id) => 'ITM-$id';
+
+/// Second line of the PRODUCT card: "ITM-1201 · 6 m · MF · 114 in stock"
 /// (no product name: the database has no name column).
+/// The ITM number is shown first so the keeper can compare it with the
+/// number printed under the QR → sure it's the RIGHT row.
 String productSubtitle(ItemRow row) {
-  // Collection `if`: the colour part is only added when it isn't empty.
+  // Collection `if`: a part is only added when it has a value.
+  final id = row.id;
   final parts = [
+    if (id != null) productLabel(id),
     lengthText(row.length),
     if (row.color.isNotEmpty) row.color,
     '${row.quantity} in stock',

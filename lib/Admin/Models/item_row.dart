@@ -18,6 +18,12 @@ class ItemRow {
   int get quantity =>
       ((data[stockField] ?? data['Quantity']) as num?)?.toInt() ?? 0;
 
+  /// The item's unique number (the `id` field, NOT the Firebase key).
+  /// Key and id are different: key = id - 1 (items/0 holds id 1).
+  /// `as num?` → the value may be missing (null) or an int/double;
+  /// `?.toInt()` only runs when it isn't null.
+  int? get id => (data['id'] as num?)?.toInt();
+
   String get code => (data['Item Code'] ?? '').toString();
   String get color => (data['COLOR'] ?? '').toString();
   String get uomCode => (data['UOM Code'] ?? '').toString();

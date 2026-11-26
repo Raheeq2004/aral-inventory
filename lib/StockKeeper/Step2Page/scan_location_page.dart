@@ -30,7 +30,12 @@ class ScanLocationPage extends StatefulWidget {
 }
 
 class _ScanLocationPageState extends State<ScanLocationPage> {
-  final MobileScannerController _camera = MobileScannerController(
+  // NOT final: if the camera gets stuck, _freshCamera() swaps in a new one.
+  MobileScannerController _camera = _newCamera();
+
+  /// Creates a camera controller with OUR settings. `static` → it doesn't
+  /// need the page object, so it can be used in the field above.
+  static MobileScannerController _newCamera() => MobileScannerController(
     formats: const [BarcodeFormat.qrCode],
     detectionSpeed: DetectionSpeed.normal,
   );
@@ -60,6 +65,10 @@ class _ScanLocationPageState extends State<ScanLocationPage> {
   Future<void> _lookup(String code) async {
     final flow = context.read<ScanFlowProvider>();
     _paused = true;
+    // true → keep [_lastCode] after this lookup, so the 2-second rule
+    // ignores the SAME label: a short message (no dialog) would otherwise
+    // repeat many times a second while the label is still in front.
+    var keepLastCode = false;
     try {
       final status = await flow.lookupLocation(code);
       if (!mounted) return;
@@ -78,7 +87,11 @@ class _ScanLocationPageState extends State<ScanLocationPage> {
             message: ScanFlowProvider.looksLikeLocation(clean)
                 ? 'The code $clean isn\'t registered in the system. '
                       'Check the shelf label or ask your admin to add it.'
-                // wrong shape → most likely a PRODUCT label scanned here
+                // an ITM-… label = a PRODUCT label scanned on the shelf step
+                : ScanFlowProvider.looksLikeProduct(clean)
+                ? '$clean is a product label. '
+                      'Scan the label on the rack or shelf.'
+                // any other shape → not one of our shelf labels
                 : '$clean isn\'t a location code. '
                       'Scan the label on the rack or shelf.',
           );
@@ -88,14 +101,19 @@ class _ScanLocationPageState extends State<ScanLocationPage> {
           }
 
         case LocationStatus.offline:
+          keepLastCode = true;
           _message(
             'No connection. Check the internet and scan again.',
             error: true,
           );
+
+        case LocationStatus.failed:
+          keepLastCode = true;
+          _message('Something went wrong. Try again.', error: true);
       }
     } finally {
       _paused = false;
-      _lastCode = null;
+      if (!keepLastCode) _lastCode = null;
     }
   }
 
@@ -125,7 +143,29 @@ class _ScanLocationPageState extends State<ScanLocationPage> {
             const WorkerRouting(title: 'Quantity', child: QuantityPage()),
       ),
     );
-    if (mounted) await _camera.start();
+    // Back from Quantity → start the camera again, safely.
+    if (mounted) await _resumeCamera();
+  }
+
+  // ---------------------------------------------------------------
+  // Camera recovery (coming back from another page / "Try again")
+  // ---------------------------------------------------------------
+
+  /// Start the camera again after another page used it. First tries the
+  /// SAME controller a few times; if it's still stuck → a fresh one.
+  Future<void> _resumeCamera() async {
+    final ok = await startCameraSafely(_camera);
+    if (!ok && mounted) await _freshCamera();
+  }
+
+  /// Replaces the stuck controller with a brand-new one.
+  /// setState → build() runs again → ScannerView gets the new controller
+  /// → a new MobileScanner (ObjectKey) starts it automatically.
+  /// The old one is then disposed (frees the camera hardware).
+  Future<void> _freshCamera() async {
+    final old = _camera;
+    setState(() => _camera = _newCamera());
+    await old.dispose();
   }
 
   void _message(String text, {bool error = false}) {
@@ -153,6 +193,7 @@ class _ScanLocationPageState extends State<ScanLocationPage> {
               controller: _camera,
               hint: 'Now scan the QR on the rack or shelf',
               onCode: _onScan,
+              onRetry: _freshCamera, // "Try again" on the camera-error screen
               busy: flow.isLooking,
             ),
           ),
