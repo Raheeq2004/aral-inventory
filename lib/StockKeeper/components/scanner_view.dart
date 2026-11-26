@@ -5,6 +5,41 @@ import 'package:flutter/material.dart';
 // Apple's Vision framework. Both work offline.
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+/// Starts [controller] again, SAFELY, after another page used the camera.
+/// Returns true if the camera is running at the end.
+///
+/// THE PROBLEM it solves: when the keeper goes back from Step 2, Step 2
+/// closes its own camera — but releasing a camera takes a moment (it
+/// happens in the background). If Step 1 calls start() at that exact
+/// moment, the camera is still busy → start fails → "The camera couldn't
+/// start" stays on screen forever.
+///
+/// THE FIX: wait a little and try again, up to [attempts] times, each
+/// wait a bit longer (300 ms, 600 ms, 900 ms, 1200 ms).
+/// If it still fails, the PAGE replaces the controller with a brand-new
+/// one (see `_freshCamera()` in Steps 1 and 2).
+Future<bool> startCameraSafely(
+  MobileScannerController controller, {
+  int attempts = 4,
+}) async {
+  // value = the live camera state (running? error? torch?…)
+  bool ok() => controller.value.isRunning && controller.value.error == null;
+
+  for (var i = 1; i <= attempts; i++) {
+    // Future.delayed = "wait this long, then continue" (doesn't freeze the UI)
+    await Future.delayed(Duration(milliseconds: 300 * i));
+    try {
+      if (ok()) return true; // already running → nothing to do
+      await controller.start();
+      if (ok()) return true; // started → stop trying
+    } catch (e) {
+      // still busy → the loop waits a bit longer and tries again
+      debugPrint('Camera start attempt $i failed: $e');
+    }
+  }
+  return ok();
+}
+
 /// The black camera area of Steps 1 and 2 (W3 / W4 in Figma):
 ///   • hint text on top ("Point the camera at the QR label…")
 ///   • white corner frame + moving orange scan line
@@ -19,6 +54,7 @@ class ScannerView extends StatefulWidget {
     required this.controller,
     required this.hint,
     required this.onCode,
+    required this.onRetry,
     this.busy = false,
   });
 
@@ -26,6 +62,10 @@ class ScannerView extends StatefulWidget {
   final String hint; // text above the frame
   final ValueChanged<String> onCode; // called with the QR's text
   final bool busy; // true → show "Checking…"
+
+  /// Called by the "Try again" button of the camera-error screen.
+  /// The page gives a function that creates a FRESH camera controller.
+  final Future<void> Function() onRetry;
 
   @override
   State<ScannerView> createState() => _ScannerViewState();
@@ -75,6 +115,10 @@ class _ScannerViewState extends State<ScannerView>
             // ---- 1) the camera ----
             Positioned.fill(
               child: MobileScanner(
+                // ObjectKey(controller): when the page swaps in a NEW
+                // controller, Flutter builds a NEW MobileScanner for it
+                // (instead of keeping the old, broken one) → it starts fresh.
+                key: ObjectKey(widget.controller),
                 controller: widget.controller,
                 onDetect: _onDetect,
                 // scanWindow: read ONLY codes inside the frame → faster,
@@ -82,7 +126,9 @@ class _ScannerViewState extends State<ScannerView>
                 scanWindow: frame,
                 // Shown instead of the camera if something goes wrong
                 // (most often: the camera permission was refused).
-                errorBuilder: (context, error) => _CameraError(error: error),
+                // "Try again" → start the SAME controller again.
+                errorBuilder: (context, error) =>
+                    _CameraError(error: error, onRetry: widget.onRetry),
               ),
             ),
 
@@ -148,7 +194,7 @@ class _ScannerViewState extends State<ScannerView>
 
 /// Torch ⚡ and zoom 🔍 buttons.
 ///
-/// MobileScannerController is a ValueNotifier<MobileScannerState>: its
+/// MobileScannerController is a `ValueNotifier<MobileScannerState>`: its
 /// `value` holds the live camera state (torch on/off, zoom…).
 /// ValueListenableBuilder rebuilds the buttons when that state changes.
 class _CameraButtons extends StatelessWidget {
@@ -256,13 +302,32 @@ class _CheckingChip extends StatelessWidget {
 }
 
 /// Shown instead of the camera when it can't start.
-class _CameraError extends StatelessWidget {
-  const _CameraError({required this.error});
+/// Has a "Try again" button, so the keeper is never stuck (before, the
+/// only way out was closing the whole app).
+class _CameraError extends StatefulWidget {
+  const _CameraError({required this.error, required this.onRetry});
   final MobileScannerException error;
+  final Future<void> Function() onRetry; // a function that returns a Future
+
+  @override
+  State<_CameraError> createState() => _CameraErrorState();
+}
+
+class _CameraErrorState extends State<_CameraError> {
+  bool _retrying = false; // true → show a spinner instead of the button
+
+  Future<void> _retry() async {
+    setState(() => _retrying = true);
+    await widget.onRetry();
+    // If the camera started, this whole widget disappears (the camera
+    // shows instead), so only touch the state if it's still on screen.
+    if (mounted) setState(() => _retrying = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final denied = error.errorCode == MobileScannerErrorCode.permissionDenied;
+    final denied =
+        widget.error.errorCode == MobileScannerErrorCode.permissionDenied;
     return ColoredBox(
       color: const Color(0xFF0B0F14),
       child: Center(
@@ -285,6 +350,26 @@ class _CameraError extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: Colors.white, height: 1.4),
               ),
+              const SizedBox(height: 16),
+              _retrying
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        color: Colors.white,
+                      ),
+                    )
+                  : FilledButton.icon(
+                      onPressed: _retry,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Try again'),
+                      // white button: visible on the black background
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: AppTheme.primaryColor,
+                      ),
+                    ),
             ],
           ),
         ),
