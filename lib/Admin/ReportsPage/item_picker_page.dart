@@ -285,7 +285,7 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
           if (_allFamilies && canExpand) ...[
             ExpandPill(
               strong: true,
-              label: 'Show fewer families',
+              label: 'Show fewer types',
               icon: Icons.expand_less,
               onTap: () => setState(() => _allFamilies = false),
             ),
