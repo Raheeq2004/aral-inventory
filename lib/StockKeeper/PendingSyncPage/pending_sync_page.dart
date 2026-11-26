@@ -5,20 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-// =====================================================================
-// ARAL Inventory – Pending sync page (worker)
-// Figma: "Pending sync". Reads everything from PendingSyncController.
-// =====================================================================
+
 
 class PendingSyncPage extends StatelessWidget {
   const PendingSyncPage({super.key, this.onLogout});
 
-  /// Logout icon (top right). TODO(integrate): connect to the real logout.
   final VoidCallback? onLogout;
 
-  /// DEMO route: gives the page its own fake controller so you can open it
   /// alone:  Navigator.push(context, PendingSyncPage.demoRoute());
-  /// TODO(integrate): once PendingSyncController is registered in
   /// main.dart's MultiProvider, use `MaterialPageRoute(builder: (_) =>
   /// const PendingSyncPage())` instead and delete this.
   static Route<void> demoRoute() => MaterialPageRoute(

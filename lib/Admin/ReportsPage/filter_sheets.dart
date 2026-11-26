@@ -5,15 +5,6 @@ import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// =====================================================================
-// The bottom sheets of the Reports page.
-//
-// Every sheet works on a DRAFT copy of the filters and returns the new
-// [ReportFilters] only when the admin applies it. Closing the sheet by
-// tapping outside returns null = nothing changes.
-// `countFor` is given by the page: it answers "how many rows would this
-// draft give?", so the button can say "Show 19 rows" BEFORE closing.
-// =====================================================================
 
 typedef CountFor = int Function(ReportFilters draft);
 
@@ -87,7 +78,14 @@ class _Shell extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        // + the phone's bottom inset (back / home buttons) + a little extra,
+        // so the last button is never hidden behind them
+        padding: EdgeInsets.fromLTRB(
+          20,
+          0,
+          20,
+          20 + MediaQuery.paddingOf(context).bottom + 12,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -244,7 +242,7 @@ class _FieldButton extends StatelessWidget {
       color: enabled ? AppTheme.surfaceColor : AppTheme.backgroundColor,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(16),
         side: const BorderSide(color: AppTheme.borderColor),
       ),
       child: InkWell(
@@ -298,7 +296,7 @@ class _GridTile extends StatelessWidget {
       color: selected ? AppTheme.secondaryContainer : AppTheme.surfaceColor,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(
           color: selected
               ? AppTheme.secondaryColor.withValues(alpha: 0.5)
@@ -439,9 +437,9 @@ class _PeriodSheetState extends State<_PeriodSheet> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 16),
-        ElevatedButton(
+        ReportButton(
           onPressed: () => Navigator.of(context).pop(draft),
-          child: Text('Apply · ${rowsText(widget.countFor(draft))}'),
+          label: 'Apply · ${rowsText(widget.countFor(draft))}',
         ),
       ],
     );
@@ -598,7 +596,7 @@ class _LocationSheetState extends State<_LocationSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
                 color: AppTheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
                 '$wh-$rack-$_shelf',
@@ -611,9 +609,9 @@ class _LocationSheetState extends State<_LocationSheet> {
           ),
         ],
         const SizedBox(height: 16),
-        ElevatedButton(
+        ReportButton(
           onPressed: () => Navigator.of(context).pop(_draft),
-          child: Text('Show ${rowsText(widget.countFor(_draft))}'),
+          label: 'Show ${rowsText(widget.countFor(_draft))}',
         ),
       ],
     );
@@ -707,7 +705,7 @@ class _LocationSheetState extends State<_LocationSheet> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: AppTheme.backgroundColor,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: AppTheme.borderColor),
           ),
           child: Row(
@@ -775,7 +773,7 @@ class _LengthFinishSheet extends StatefulWidget {
   });
 
   final ReportFilters filters;
-  final List<double> lengths;
+  final List<double> lengths; // the standard chips (static)
   final List<String> finishes;
   final CountFor countFor;
 
@@ -785,22 +783,9 @@ class _LengthFinishSheet extends StatefulWidget {
 
 class _LengthFinishSheetState extends State<_LengthFinishSheet> {
   final TextEditingController _custom = TextEditingController();
-  double? _length;
-  String? _finish;
+  late final List<double> _lengths = [...widget.filters.lengths];
+  late final Set<String> _finishes = {...widget.filters.finishes};
   bool _customOpen = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _length = widget.filters.length;
-    _finish = widget.filters.finish;
-    final l = _length;
-    // a length that is not one of the chips = it was typed before
-    if (l != null && !widget.lengths.any((x) => sameLength(x, l))) {
-      _customOpen = true;
-      _custom.text = l == l.roundToDouble() ? '${l.toInt()}' : '$l';
-    }
-  }
 
   @override
   void dispose() {
@@ -815,27 +800,62 @@ class _LengthFinishSheetState extends State<_LengthFinishSheet> {
     return v;
   }
 
-  ReportFilters get _draft =>
-      widget.filters.copyWith(length: _length, finish: _finish);
+  ReportFilters get _draft => widget.filters.copyWith(
+    lengths: ([..._lengths]..sort()),
+    finishes: _finishes.toList(),
+  );
 
-  void _chooseLength(double? value) => setState(() {
-    _length = value;
-    _customOpen = false;
-    _custom.clear();
+  bool _hasLength(double v) => _lengths.any((x) => sameLength(x, v));
+
+  void _toggleLength(double v) => setState(() {
+    if (_hasLength(v)) {
+      _lengths.removeWhere((x) => sameLength(x, v));
+    } else {
+      _lengths.add(v);
+    }
   });
+
+  void _toggleFinish(String f) => setState(() {
+    if (!_finishes.remove(f)) _finishes.add(f);
+  });
+
+  /// Adds the typed length as one more (selected) chip; the box stays open
+  /// so several custom lengths can be typed one after the other.
+  void _addCustom() {
+    final v = _parse(_custom.text);
+    if (v == null) return;
+    setState(() {
+      if (!_hasLength(v)) _lengths.add(v);
+      _custom.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final typed = _custom.text.trim();
+    final typedOk = _parse(typed) != null;
+    // lengths that are not one of the standard chips = typed ones
+    final typedLengths = _lengths
+        .where((l) => !widget.lengths.any((s) => sameLength(s, l)))
+        .toList()
+      ..sort();
+
     return _Shell(
       children: [
         _Header(
           title: 'Length and finish',
-          onAction: () {
-            _finish = null;
-            _chooseLength(null);
-          },
+          onAction: () => setState(() {
+            _lengths.clear();
+            _finishes.clear();
+            _custom.clear();
+            _customOpen = false;
+          }),
         ),
+        Text(
+          'You can pick more than one.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
         const _Label('LENGTH'),
         Wrap(
           spacing: 8,
@@ -843,41 +863,69 @@ class _LengthFinishSheetState extends State<_LengthFinishSheet> {
           children: [
             ReportChip(
               label: 'Any',
-              selected: _length == null && !_customOpen,
-              onTap: () => _chooseLength(null),
+              selected: _lengths.isEmpty,
+              onTap: () => setState(_lengths.clear),
             ),
             for (final l in widget.lengths)
               ReportChip(
                 label: fmtLength(l),
-                selected:
-                    !_customOpen && _length != null && sameLength(l, _length!),
-                onTap: () => _chooseLength(l),
+                selected: _hasLength(l),
+                onTap: () => _toggleLength(l),
+              ),
+            // typed before: shown as chips too, tap one to remove it
+            for (final l in typedLengths)
+              ReportChip(
+                label: fmtLength(l),
+                selected: true,
+                onTap: () => _toggleLength(l),
               ),
             ReportChip(
               label: 'Custom',
               selected: _customOpen,
-              onTap: () => setState(() => _customOpen = true),
+              onTap: () => setState(() => _customOpen = !_customOpen),
             ),
           ],
         ),
         if (_customOpen) ...[
           const SizedBox(height: 12),
-          TextField(
-            controller: _custom,
-            autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _custom,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
+                  ],
+                  decoration: InputDecoration(
+                    labelText: 'Custom length',
+                    hintText: 'e.g. 6.5',
+                    suffixText: 'm',
+                    errorText: typed.isNotEmpty && !typedOk
+                        ? 'Enter a length like 6.5'
+                        : null,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _addCustom(),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: typedOk ? _addCustom : null,
+                  style: ElevatedButton.styleFrom(
+                    shape: const StadiumBorder(),
+                    padding: const EdgeInsets.symmetric(horizontal: 22),
+                  ),
+                  child: const Text('Add'),
+                ),
+              ),
             ],
-            decoration: InputDecoration(
-              labelText: 'Custom length',
-              hintText: 'e.g. 6.5',
-              suffixText: 'm',
-              errorText: typed.isNotEmpty && _length == null
-                  ? 'Enter a length like 6.5'
-                  : null,
-            ),
-            onChanged: (t) => setState(() => _length = _parse(t)),
           ),
         ],
         const SizedBox(height: 16),
@@ -888,21 +936,21 @@ class _LengthFinishSheetState extends State<_LengthFinishSheet> {
           children: [
             ReportChip(
               label: 'Any',
-              selected: _finish == null,
-              onTap: () => setState(() => _finish = null),
+              selected: _finishes.isEmpty,
+              onTap: () => setState(_finishes.clear),
             ),
             for (final f in widget.finishes)
               ReportChip(
                 label: f,
-                selected: _finish == f,
-                onTap: () => setState(() => _finish = f),
+                selected: _finishes.contains(f),
+                onTap: () => _toggleFinish(f),
               ),
           ],
         ),
         const SizedBox(height: 16),
-        ElevatedButton(
+        ReportButton(
           onPressed: () => Navigator.of(context).pop(_draft),
-          child: Text('Show ${rowsText(widget.countFor(_draft))}'),
+          label: 'Show ${rowsText(widget.countFor(_draft))}',
         ),
       ],
     );
@@ -959,9 +1007,9 @@ class _WorkerSheetState extends State<_WorkerSheet> {
             onTap: () => setState(() => _worker = w),
           ),
         const SizedBox(height: 16),
-        ElevatedButton(
+        ReportButton(
           onPressed: () => Navigator.of(context).pop(_draft),
-          child: Text('Show ${rowsText(widget.countFor(_draft))}'),
+          label: 'Show ${rowsText(widget.countFor(_draft))}',
         ),
       ],
     );
