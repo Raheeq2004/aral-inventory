@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:typed_data';
-
 import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Theme/theme.dart';
@@ -12,8 +11,6 @@ import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// One line of the stock report: an item row (all its properties) and its
-/// STOCK on the chosen day.
 class StockLine {
   final ItemRow item;
   final int stock;
@@ -267,10 +264,7 @@ class ExcelExportService {
       'Item ID',
       ...keys,
       'Item stock (now)',
-      'Location',
-      'Warehouse',
-      'Rack',
-      'Shelf',
+      'Location', // one code (e.g. WH1-B3-15) already says all three
       'Worker',
       'Direction',
       'Quantity',
@@ -284,7 +278,6 @@ class ExcelExportService {
     final rows = <List<xl.CellValue>>[];
     for (final tx in sorted) {
       final item = index.forTx(tx);
-      final place = locationParts(tx.locationCode);
       final isIn = tx.direction.toUpperCase() == 'IN';
 
       rows.add([
@@ -299,9 +292,6 @@ class ExcelExportService {
           ),
         _cell(item?.quantity),
         xl.TextCellValue(tx.locationCode),
-        xl.TextCellValue(place[0]),
-        xl.TextCellValue(place[1]),
-        xl.TextCellValue(place[2]),
         xl.TextCellValue(tx.stockKeeperId),
         xl.TextCellValue(tx.direction.toUpperCase()),
         xl.IntCellValue(isIn ? tx.quantity : -tx.quantity),

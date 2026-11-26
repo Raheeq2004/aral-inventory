@@ -1,8 +1,7 @@
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 
-/// The rounded "pill" used for every choice in the sheets and the picker.
-/// Selected = peach fill, bold text (no check mark, like the design).
+
 class ReportChip extends StatelessWidget {
   const ReportChip({
     super.key,
@@ -66,9 +65,7 @@ class ExportButton extends StatelessWidget {
         // busy: keep the navy colour, but do nothing when tapped
         onPressed: busy ? () {} : (enabled ? onPressed : null),
         style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          shape: const StadiumBorder(), // fully rounded
         ),
         icon: busy
             ? const SizedBox(
@@ -81,6 +78,81 @@ class ExportButton extends StatelessWidget {
               )
             : const Icon(Icons.download_rounded, size: 20),
         label: Text(busy ? 'Exporting…' : label),
+      ),
+    );
+  }
+}
+
+/// The navy button of every sheet ("Show 19 rows", "Apply", "Done"):
+/// fully rounded, same height as the Export button.
+class ReportButton extends StatelessWidget {
+  const ReportButton({super.key, required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        onPressed: onPressed,
+        style: ElevatedButton.styleFrom(shape: const StadiumBorder()),
+        child: Text(label),
+      ),
+    );
+  }
+}
+
+/// The "+46 more" / "Show fewer" pill of the family chips.
+/// Normal = light blue (opens). [strong] = solid navy, full strength, so
+/// the way back out of a long list is impossible to miss.
+class ExpandPill extends StatelessWidget {
+  const ExpandPill({
+    super.key,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.strong = false,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = strong ? AppTheme.primaryColor : AppTheme.primaryContainer;
+    final fg = strong ? Colors.white : AppTheme.onPrimaryContainer;
+    return Material(
+      color: bg,
+      shape: const StadiumBorder(),
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: strong ? 12 : 7,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: strong ? 14 : 13,
+                  fontWeight: FontWeight.w700,
+                  color: fg,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(icon, size: strong ? 20 : 18, color: fg),
+            ],
+          ),
+        ),
       ),
     );
   }

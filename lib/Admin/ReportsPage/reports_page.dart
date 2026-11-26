@@ -16,13 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-// =====================================================================
-// WHERE DOES THE PREVIEW TABLE LIVE?   (change ONE word to switch)
-//
-//   mainPage    -> preview under the filters; "Export" saves the file at once
-//   confirmPage -> main page = filters + "Export N rows"; the button opens a
-//                  "Confirm export" page that shows the preview + the button
-// =====================================================================
+
 enum PreviewPlacement { mainPage, confirmPage }
 
 const PreviewPlacement kPreviewPlacement = PreviewPlacement.mainPage;
@@ -155,16 +149,16 @@ class _ReportsPageState extends State<ReportsPage> {
     final length = row?.length ?? tx.length;
     final color = row?.color ?? tx.color;
 
-    final item = f.item;
-    if (item != null) {
-      if (row != null) {
-        if (row.key != item.key) return false;
-      } else if (code != item.code || !sameLength(length, item.length)) {
-        return false;
-      }
+    if (f.items.isNotEmpty) {
+      final picked = f.items.any(
+        (item) => row != null
+            ? row.key == item.key
+            : code == item.code && sameLength(length, item.length),
+      );
+      if (!picked) return false;
     }
-    if (f.length != null && !sameLength(length, f.length!)) return false;
-    if (f.finish != null && color != f.finish) return false;
+    if (!f.matchesLength(length)) return false;
+    if (!f.matchesFinish(color)) return false;
 
     if (f.hasLocation) {
       final p = ExcelExportService.locationParts(tx.locationCode);
@@ -183,9 +177,11 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   bool _matchesRow(ItemRow r, ReportFilters f) {
-    if (f.item != null && r.key != f.item!.key) return false;
-    if (f.length != null && !sameLength(r.length, f.length!)) return false;
-    if (f.finish != null && r.color != f.finish) return false;
+    if (f.items.isNotEmpty && !f.items.any((i) => i.key == r.key)) {
+      return false;
+    }
+    if (!f.matchesLength(r.length)) return false;
+    if (!f.matchesFinish(r.color)) return false;
     return true;
   }
 
@@ -287,19 +283,21 @@ class _ReportsPageState extends State<ReportsPage> {
         builder: (_) => ItemPickerPage(
           catalog: _catalog,
           recent: recent,
-          selected: _f.item,
+          selected: _f.items,
         ),
       ),
     );
     if (pick == null || !mounted) return;
     setState(() {
-      _f = _f.copyWith(item: pick.row);
-      final row = pick.row;
-      if (row != null) {
+      _f = _f.copyWith(items: pick.rows);
+      // the newest picks go first in "Recent" (the list keeps 5)
+      for (final row in pick.rows) {
         _recentKeys
           ..remove(row.key)
           ..insert(0, row.key);
-        if (_recentKeys.length > 5) _recentKeys.removeLast();
+      }
+      while (_recentKeys.length > 5) {
+        _recentKeys.removeLast();
       }
     });
   }
@@ -564,7 +562,7 @@ class _ReportsPageState extends State<ReportsPage> {
                       icon: Icons.inventory_2_outlined,
                       label: 'Item',
                       value: !_itemsLoaded ? 'Loading…' : _f.itemValue,
-                      tone: _f.item == null ? _Tone.unset : _Tone.set,
+                      tone: _f.items.isEmpty ? _Tone.unset : _Tone.set,
                       onTap: _openItem,
                     ),
                     // the stock is kept per item, not per location
@@ -580,7 +578,7 @@ class _ReportsPageState extends State<ReportsPage> {
                       icon: Icons.straighten,
                       label: 'Length · finish',
                       value: _f.lengthFinishValue,
-                      tone: (_f.length != null || _f.finish != null)
+                      tone: (_f.lengths.isNotEmpty || _f.finishes.isNotEmpty)
                           ? _Tone.set
                           : _Tone.unset,
                       onTap: _openLengthFinish,
@@ -712,7 +710,7 @@ class _KindCard extends StatelessWidget {
       color: AppTheme.surfaceColor,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         side: BorderSide(
           color: selected ? AppTheme.secondaryColor : AppTheme.borderColor,
           width: selected ? 1.5 : 1,
@@ -787,7 +785,7 @@ class _OperationsSwitch extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: const Color(0xFFEEF1F6),
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Row(
         children: [
@@ -802,7 +800,7 @@ class _OperationsSwitch extends StatelessWidget {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: o == value ? Colors.white : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(20),
                     boxShadow: o == value
                         ? const [
                             BoxShadow(

@@ -17,9 +17,7 @@ const Map<ReportPeriod, String> kPeriodLabels = {
   ReportPeriod.custom: 'Custom range…',
 };
 
-// ---------------------------------------------------------------------
 // small formatting helpers (shared by the page, the sheets and the picker)
-// ---------------------------------------------------------------------
 final NumberFormat _lenFmt = NumberFormat('0.##');
 final NumberFormat _countFmt = NumberFormat('#,##0');
 final DateFormat _dayMonth = DateFormat('d MMM');
@@ -66,12 +64,12 @@ class ReportFilters {
     this.period = ReportPeriod.thisMonth,
     this.customRange,
     this.asOf,
-    this.item,
+    this.items = const [],
     this.warehouse,
     this.rack,
     this.shelf,
-    this.length,
-    this.finish,
+    this.lengths = const [],
+    this.finishes = const [],
     this.worker,
   });
 
@@ -79,12 +77,12 @@ class ReportFilters {
   final ReportPeriod period;
   final DateTimeRange? customRange; // only used when period == custom
   final DateTime? asOf; // "stock on a date"; null = today
-  final ItemRow? item; // one exact item row (code + length)
+  final List<ItemRow> items; // empty = all items (several can be ticked)
   final String? warehouse;
   final String? rack;
   final String? shelf; // always 2 digits when numeric ("07")
-  final double? length;
-  final String? finish; // = COLOR in the items table
+  final List<double> lengths; // empty = any length (several can be ticked)
+  final List<String> finishes; // = COLOR in the items table; empty = any
   final String? worker; // = createdBy
 
   /// `null` can be passed on purpose to CLEAR a value, so the nullable
@@ -94,12 +92,12 @@ class ReportFilters {
     ReportPeriod? period,
     Object? customRange = _keep,
     Object? asOf = _keep,
-    Object? item = _keep,
+    List<ItemRow>? items,
     Object? warehouse = _keep,
     Object? rack = _keep,
     Object? shelf = _keep,
-    Object? length = _keep,
-    Object? finish = _keep,
+    List<double>? lengths,
+    List<String>? finishes,
     Object? worker = _keep,
   }) {
     return ReportFilters(
@@ -109,19 +107,26 @@ class ReportFilters {
           ? this.customRange
           : customRange as DateTimeRange?,
       asOf: identical(asOf, _keep) ? this.asOf : asOf as DateTime?,
-      item: identical(item, _keep) ? this.item : item as ItemRow?,
+      items: items ?? this.items,
       warehouse: identical(warehouse, _keep)
           ? this.warehouse
           : warehouse as String?,
       rack: identical(rack, _keep) ? this.rack : rack as String?,
       shelf: identical(shelf, _keep) ? this.shelf : shelf as String?,
-      length: identical(length, _keep) ? this.length : length as double?,
-      finish: identical(finish, _keep) ? this.finish : finish as String?,
+      lengths: lengths ?? this.lengths,
+      finishes: finishes ?? this.finishes,
       worker: identical(worker, _keep) ? this.worker : worker as String?,
     );
   }
 
   bool get hasLocation => warehouse != null || rack != null || shelf != null;
+
+  /// Empty list = no filter = everything matches.
+  bool matchesLength(double v) =>
+      lengths.isEmpty || lengths.any((l) => sameLength(l, v));
+
+  bool matchesFinish(String color) =>
+      finishes.isEmpty || finishes.contains(color);
 
   /// First and last DAY of the chosen period (local time, both included).
   DateTimeRange dateRange(DateTime now) {
@@ -171,8 +176,8 @@ class ReportFilters {
     } else {
       if (asOf != null) n++;
     }
-    if (item != null) n++;
-    if (length != null || finish != null) n++;
+    if (items.isNotEmpty) n++;
+    if (lengths.isNotEmpty || finishes.isNotEmpty) n++;
     return n;
   }
 
@@ -182,8 +187,9 @@ class ReportFilters {
       : kPeriodLabels[period]!;
 
   String get itemValue {
-    final i = item;
-    if (i == null) return 'All items';
+    if (items.isEmpty) return 'All items';
+    if (items.length > 1) return '${items.length} items';
+    final i = items.first;
     return i.length > 0 ? '${i.code} · ${fmtLength(i.length)}' : i.code;
   }
 
@@ -192,9 +198,11 @@ class ReportFilters {
       : 'All locations';
 
   String get lengthFinishValue {
+    final sorted = [...lengths]..sort();
     final parts = <String>[
-      if (length != null) fmtLength(length!),
-      if (finish != null) finish!,
+      if (sorted.length == 1) fmtLength(sorted.first),
+      if (sorted.length > 1) '${sorted.map(fmtLen).join(', ')} m',
+      if (finishes.isNotEmpty) finishes.join(', '),
     ];
     return parts.isEmpty ? 'Any' : parts.join(' · ');
   }

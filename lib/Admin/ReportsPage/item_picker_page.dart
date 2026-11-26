@@ -1,30 +1,10 @@
 import 'dart:async';
-
 import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/ReportsPage/report_filters.dart';
 import 'package:aral_project/Admin/ReportsPage/report_widgets.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 
-// =====================================================================
-// WHY THIS IS FAST (the old drop-down was slow)
-// =====================================================================
-// Old: DropdownMenu built ~2,700 menu entries (widgets) at once, every
-//      time the page rebuilt, and sorted the codes with a RegExp
-//      comparator inside build().
-//
-// New:
-//  1. [ItemCatalog] is built ONCE when the items arrive:
-//       sort O(n log n), index by family O(n), lower-case copy O(n).
-//  2. Opening the picker costs O(1): it just receives the catalog.
-//  3. The list is a SliverFixedExtentList: Flutter builds ONLY the ~15
-//     rows on screen, and (fixed row height) never measures the others.
-//     Scrolling = O(visible rows), no matter if there are 2,700 or 27,000.
-//  4. Family chip  = O(1) lookup in a Map.
-//  5. Search       = O(n·m) plain `contains` on the lower-cased codes
-//                    (n ≈ 2,700 → well under a millisecond), run once
-//                    per 300 ms pause in typing, not once per key press.
-// =====================================================================
 
 /// One searchable item: the row + everything we need pre-computed.
 class ItemEntry {
@@ -41,11 +21,12 @@ class ItemEntry {
   double get length => row.length;
 }
 
-/// The result of the picker. `ItemPick(null)` = "Clear" (all items);
-/// closing the picker with the back arrow returns null = no change.
+/// The result of the picker: every item the admin ticked.
+/// An empty list = "all items"; closing with the back arrow returns
+/// null = no change.
 class ItemPick {
-  const ItemPick(this.row);
-  final ItemRow? row;
+  const ItemPick(this.rows);
+  final List<ItemRow> rows;
 }
 
 /// The search index over the rows of `ItemsRepository.loadAll()`.
@@ -92,18 +73,18 @@ class ItemCatalog {
   }
 }
 
-/// Full-screen "Choose item" page. Pops with an [ItemPick].
+/// Full-screen "Choose item" page (MULTIPLE choice). Pops with an [ItemPick].
 class ItemPickerPage extends StatefulWidget {
   const ItemPickerPage({
     super.key,
     required this.catalog,
     required this.recent,
-    this.selected,
+    this.selected = const [],
   });
 
   final ItemCatalog catalog;
   final List<ItemEntry> recent;
-  final ItemRow? selected;
+  final List<ItemRow> selected;
 
   @override
   State<ItemPickerPage> createState() => _ItemPickerPageState();
@@ -111,7 +92,8 @@ class ItemPickerPage extends StatefulWidget {
 
 class _ItemPickerPageState extends State<ItemPickerPage> {
   static const double _rowHeight = 48;
-  static const int _chipCount = 3; // chips before the "+N"
+  static const int _chipCount = 3; // chips before the "+N more"
+  static const double _expandedChipsMaxHeight = 176;
 
   final TextEditingController _controller = TextEditingController();
   Timer? _debounce;
@@ -120,6 +102,11 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
   String? _family;
   bool _allFamilies = false;
   late List<ItemEntry> _results = widget.catalog.search('');
+
+  /// Ticked items: key -> row (keeps the order they were ticked in).
+  late final Map<String, ItemRow> _picked = {
+    for (final r in widget.selected) r.key: r,
+  };
 
   @override
   void dispose() {
@@ -159,18 +146,40 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
     _applyQuery();
   }
 
-  void _pick(ItemRow? row) => Navigator.of(context).pop(ItemPick(row));
+  void _toggle(ItemRow row) => setState(() {
+    if (_picked.remove(row.key) == null) _picked[row.key] = row;
+  });
+
+  bool get _allShownPicked =>
+      _results.isNotEmpty &&
+      _results.every((e) => _picked.containsKey(e.row.key));
+
+  /// "Select all" for the rows now on screen (only offered for a narrowed
+  /// list: a family or a search, never the whole 2,700).
+  void _toggleAllShown() => setState(() {
+    if (_allShownPicked) {
+      for (final e in _results) {
+        _picked.remove(e.row.key);
+      }
+    } else {
+      for (final e in _results) {
+        _picked[e.row.key] = e.row;
+      }
+    }
+  });
+
+  void _done() => Navigator.of(context).pop(ItemPick(_picked.values.toList()));
 
   @override
   Widget build(BuildContext context) {
     final searching = _query.isNotEmpty;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Choose item'),
+        title: const Text('Choose items'),
         actions: [
-          if (widget.selected != null)
+          if (_picked.isNotEmpty)
             TextButton(
-              onPressed: () => _pick(null),
+              onPressed: () => setState(_picked.clear),
               child: const Text(
                 'Clear',
                 style: TextStyle(
@@ -215,51 +224,85 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
           Expanded(child: _list(searching)),
         ],
       ),
+      // lifted above the phone's own buttons
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: ReportButton(
+          label: _picked.isEmpty
+              ? 'Show all items'
+              : 'Done · ${_picked.length} selected',
+          onPressed: _done,
+        ),
+      ),
     );
   }
 
   Widget _familyChips() {
     final all = widget.catalog.families;
-    final shown = _allFamilies
-        ? all
-        : <String>{
-            ...all.take(_chipCount),
-            if (_family != null) _family!,
-          }.toList();
-    final hidden = all.length - shown.length;
+    // what the SHORT view shows: the biggest families + the open one
+    final collapsed = <String>{
+      ...all.take(_chipCount),
+      if (_family != null) _family!,
+    }.toList();
+    final hidden = all.length - collapsed.length;
+    final canExpand = hidden > 0;
+    final shown = _allFamilies ? all : collapsed;
+
+    final chips = Align(
+      alignment: Alignment.centerLeft,
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          ReportChip(
+            label: 'All',
+            selected: _family == null,
+            onTap: () => _setFamily(null),
+          ),
+          for (final f in shown)
+            ReportChip(
+              label: f,
+              selected: _family == f,
+              onTap: () => _setFamily(f),
+            ),
+          if (!_allFamilies && canExpand)
+            ExpandPill(
+              label: '+$hidden more',
+              icon: Icons.expand_more,
+              onTap: () => setState(() => _allFamilies = true),
+            ),
+        ],
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: [
-            ReportChip(
-              label: 'All',
-              selected: _family == null,
-              onTap: () => _setFamily(null),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // PINNED above the long chip list, so "less" is always in view
+          if (_allFamilies && canExpand) ...[
+            ExpandPill(
+              strong: true,
+              label: 'Show fewer types',
+              icon: Icons.expand_less,
+              onTap: () => setState(() => _allFamilies = false),
             ),
-            for (final f in shown)
-              ReportChip(
-                label: f,
-                selected: _family == f,
-                onTap: () => _setFamily(f),
-              ),
-            if (hidden > 0)
-              ReportChip(
-                label: '+$hidden',
-                selected: false,
-                onTap: () => setState(() => _allFamilies = true),
-              ),
-            if (_allFamilies && all.length > _chipCount)
-              ReportChip(
-                label: 'Less',
-                selected: false,
-                onTap: () => setState(() => _allFamilies = false),
-              ),
+            const SizedBox(height: 8),
           ],
-        ),
+          if (_allFamilies)
+            // 46+ chips scroll inside their own box: the item list below
+            // never gets pushed off the screen
+            ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxHeight: _expandedChipsMaxHeight,
+              ),
+              child: SingleChildScrollView(child: chips),
+            )
+          else
+            chips,
+        ],
       ),
     );
   }
@@ -281,6 +324,7 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
     final title = searching
         ? (n == 1 ? '1 MATCH' : '${fmtCount(n)} MATCHES')
         : (_family ?? 'ALL ITEMS');
+    final narrowed = searching || _family != null;
 
     return CustomScrollView(
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
@@ -288,12 +332,28 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
         if (showRecent) ...[
           _header('RECENT'),
           SliverToBoxAdapter(
-            child: Column(
-              children: [for (final e in widget.recent) _tile(e, recent: true)],
-            ),
+            child: Column(children: [for (final e in widget.recent) _tile(e)]),
           ),
         ],
-        _header(title),
+        _header(
+          title,
+          trailing: narrowed && n > 1
+              ? TextButton(
+                  onPressed: _toggleAllShown,
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    shape: const StadiumBorder(),
+                  ),
+                  child: Text(
+                    _allShownPicked ? 'Unselect all' : 'Select all ${fmtCount(n)}',
+                    style: const TextStyle(
+                      color: AppTheme.secondaryColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              : null,
+        ),
         SliverFixedExtentList(
           itemExtent: _rowHeight,
           delegate: SliverChildBuilderDelegate(
@@ -306,51 +366,63 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
     );
   }
 
-  SliverToBoxAdapter _header(String text) => SliverToBoxAdapter(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.6,
-          color: AppTheme.textColorSecondary,
+  SliverToBoxAdapter _header(String text, {Widget? trailing}) =>
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+          child: SizedBox(
+            height: 36,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.6,
+                      color: AppTheme.textColorSecondary,
+                    ),
+                  ),
+                ),
+                if (trailing != null) trailing,
+              ],
+            ),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
-  Widget _tile(ItemEntry e, {bool recent = false}) {
-    final isSelected = widget.selected?.key == e.row.key;
+  Widget _tile(ItemEntry e) {
+    final isSelected = _picked.containsKey(e.row.key);
     return InkWell(
-      onTap: () => _pick(e.row),
+      onTap: () => _toggle(e.row),
       child: Container(
         height: _rowHeight,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: AppTheme.borderColor)),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? AppTheme.secondaryContainer.withValues(alpha: 0.35)
+              : null,
+          border: const Border(
+            bottom: BorderSide(color: AppTheme.borderColor),
+          ),
         ),
         child: Row(
           children: [
-            if (recent) ...[
-              const Icon(
-                Icons.history,
-                size: 16,
-                color: AppTheme.textColorSecondary,
-              ),
-              const SizedBox(width: 8),
-            ],
+            Icon(
+              isSelected ? Icons.check_circle : Icons.circle_outlined,
+              size: 22,
+              color: isSelected
+                  ? AppTheme.secondaryColor
+                  : AppTheme.textColorSecondary.withValues(alpha: 0.6),
+            ),
+            const SizedBox(width: 12),
             Expanded(child: _highlighted(e)),
             if (e.length > 0)
               Text(
                 fmtLength(e.length),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
-            if (isSelected) ...[
-              const SizedBox(width: 8),
-              const Icon(Icons.check, size: 18, color: AppTheme.secondaryColor),
-            ],
           ],
         ),
       ),
