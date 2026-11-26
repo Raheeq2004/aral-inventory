@@ -1,21 +1,9 @@
 import 'package:flutter/foundation.dart';
 
-// =====================================================================
-// ARAL Inventory – Pending sync (worker side)
-// =====================================================================
-// This file = the DATA + LOGIC behind the Pending sync page.
-// The page (pending_sync_page.dart) only DRAWS what is in here.
-//
-// For now it runs on DEMO data so the UI can be tested alone.
-// Everything the team must connect later is marked:  // TODO(integrate)
-// =====================================================================
-
 /// The 3 states a saved transaction can be in.
 enum SyncStatus { pending, synced, failed }
 
-/// One row on the Pending sync page.
-/// Small on purpose: it only holds what the page SHOWS. The real
-/// transaction (item id, location, createdBy …) stays in the offline queue.
+
 class PendingTransaction {
   const PendingTransaction({
     required this.id,

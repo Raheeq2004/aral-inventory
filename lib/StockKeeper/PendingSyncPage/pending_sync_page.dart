@@ -1,5 +1,5 @@
 import 'package:aral_project/connectivity/connectivity_badge.dart';
-import 'package:aral_project/StockKeeper/PendingSyncPage/pending_sync_model.dart';
+import 'package:aral_project/StockKeeper/models/pending_sync_model.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
