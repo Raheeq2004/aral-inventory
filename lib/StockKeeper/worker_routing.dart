@@ -1,3 +1,4 @@
+import 'package:aral_project/SharedComponents/end_drawer_menu.dart';
 import 'package:aral_project/connectivity/connectivity_badge.dart';
 import 'package:flutter/material.dart';
 
@@ -20,10 +21,21 @@ class _WorkerRoutingState extends State<WorkerRouting> {
         actions: [
           const ConnectivityBadge(),
           const SizedBox(width: 8),
-          IconButton(onPressed: () {}, icon: const Icon(Icons.history_rounded)),
+          Builder(
+            builder: (buttonContext) {
+              return IconButton(
+                onPressed: () {
+                  Scaffold.of(buttonContext).openEndDrawer();
+                },
+                icon: const Icon(Icons.menu_rounded),
+              );
+            },
+          ),
           const SizedBox(width: 10),
         ],
       ),
+      endDrawer: EndDrawerMenu(),
+
       body: widget.child,
     );
   }

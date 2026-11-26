@@ -2,10 +2,38 @@ import 'package:aral_project/Admin/providers/filter_provider.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-class FilterBottonSheetContent extends StatelessWidget {
+class FilterBottonSheetContent extends StatefulWidget {
   const FilterBottonSheetContent({super.key});
+
+  @override
+  State<FilterBottonSheetContent> createState() =>
+      _FilterBottonSheetContentState();
+}
+
+class _FilterBottonSheetContentState extends State<FilterBottonSheetContent> {
+  late final TextEditingController _customLengthController;
+
+  @override
+  void initState() {
+    super.initState();
+    final filterProvider = context.read<TransactionFilterProvider>();
+    // Pre-fill the input if a custom length was already applied earlier
+    _customLengthController = TextEditingController(
+      text:
+          filterProvider.isCustomLength && filterProvider.selectedLength != null
+          ? filterProvider.selectedLength.toString()
+          : '',
+    );
+  }
+
+  @override
+  void dispose() {
+    _customLengthController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +48,12 @@ class FilterBottonSheetContent extends StatelessWidget {
         color: AppTheme.surfaceColor,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.only(top: 12, left: 20, right: 20, bottom: 20),
+      padding: EdgeInsets.only(
+        top: 12,
+        left: 20,
+        right: 20,
+        bottom: 20 + MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -73,7 +106,10 @@ class FilterBottonSheetContent extends StatelessWidget {
                     ),
                   const Spacer(),
                   TextButton(
-                    onPressed: () => filterProvider.resetAll(),
+                    onPressed: () => {
+                      _customLengthController.clear(),
+                      filterProvider.resetAll(),
+                    },
                     child: Text(
                       'Reset all',
                       style: TextStyle(
@@ -268,9 +304,71 @@ class FilterBottonSheetContent extends StatelessWidget {
                       filterProvider.selectedLength == len,
                       (val) => filterProvider.setLength(len),
                     ),
+                  _buildCustomChoiceChip(
+                    'Custom',
+                    filterProvider.isCustomLength,
+                    (val) {
+                      _customLengthController.clear();
+                      filterProvider.selectCustomLength();
+                    },
+                  ),
                 ],
               ),
-
+              // <-- ADDED: Custom Length TextField shown when "Custom" chip is active
+              if (filterProvider.isCustomLength) ...[
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _customLengthController,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  inputFormatters: [
+                    // Allows numbers with optional decimal point (e.g., 6.5)
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                  ],
+                  onChanged: (value) {
+                    final parsed = double.tryParse(value.trim());
+                    filterProvider.setLength(parsed, isCustom: true);
+                  },
+                  decoration: InputDecoration(
+                    labelText: 'Custom length',
+                    labelStyle: TextStyle(
+                      color: AppTheme.secondaryColor,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    hintText: 'e.g. 6.5',
+                    hintStyle: const TextStyle(
+                      color: AppTheme.textColorSecondary,
+                    ),
+                    suffixText: 'm',
+                    suffixStyle: const TextStyle(
+                      color: AppTheme.textColorSecondary,
+                      fontSize: 16,
+                    ),
+                    filled: true,
+                    fillColor: AppTheme.surfaceColor,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: AppTheme.secondaryColor,
+                        width: 1.5,
+                      ),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(
+                        color: AppTheme.secondaryColor,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
 
               // Warehouse & Location Section
