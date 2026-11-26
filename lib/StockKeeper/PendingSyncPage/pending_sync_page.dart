@@ -1,35 +1,56 @@
 import 'package:aral_project/connectivity/connectivity_badge.dart';
-import 'package:aral_project/StockKeeper/models/pending_sync_model.dart';
+import 'package:aral_project/StockKeeper/Models/pending_transaction.dart';
+import 'package:aral_project/StockKeeper/providers/pending_sync_provider.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-
+// =====================================================================
+// ARAL Inventory – Pending sync page (worker)
+// Figma: "Pending sync". Reads everything from PendingSyncProvider.
+// =====================================================================
 
 class PendingSyncPage extends StatelessWidget {
-  const PendingSyncPage({super.key, this.onLogout});
+  const PendingSyncPage({super.key, this.onLogout, this.onBack});
 
+  /// Logout icon (top right). TODO(integrate): connect to the real logout.
   final VoidCallback? onLogout;
 
+  /// Back arrow (top left). Leave it null to simply go back to the page
+  /// that opened this one (e.g. the quantity page, when it pushed us).
+  /// TODO(integrate): while this page is the app's `home`, there is nothing
+  /// to go back to, so pass the navigation to the quantity page here, e.g.
+  ///   onBack: () => Navigator.of(context).pushReplacement(MaterialPageRoute(
+  ///     builder: (_) => const WorkerRouting(
+  ///       title: 'Quantity', child: QuantityPage())))
+  final VoidCallback? onBack;
+
+  /// DEMO route: gives the page its own fake provider so you can open it
   /// alone:  Navigator.push(context, PendingSyncPage.demoRoute());
+  /// TODO(integrate): once PendingSyncProvider is registered in
   /// main.dart's MultiProvider, use `MaterialPageRoute(builder: (_) =>
   /// const PendingSyncPage())` instead and delete this.
   static Route<void> demoRoute() => MaterialPageRoute(
     builder: (_) => ChangeNotifierProvider(
-      create: (_) => PendingSyncController.demo(),
+      create: (_) => PendingSyncProvider.demo(),
       child: const PendingSyncPage(),
     ),
   );
 
   @override
   Widget build(BuildContext context) {
-    final c = context.watch<PendingSyncController>();
+    final c = context.watch<PendingSyncProvider>();
     final entries = _groupByDay(c.items);
 
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: onBack ?? () => Navigator.of(context).maybePop(),
+        ),
         title: const Text('Pending sync'),
         actions: [
           const ConnectivityBadge(),
@@ -51,14 +72,14 @@ class PendingSyncPage extends StatelessWidget {
               // +1 → the "waiting" card is the first row of the list
               itemCount: entries.length + 1,
               itemBuilder: (context, i) {
-                if (i == 0) return _WaitingCard(controller: c);
+                if (i == 0) return _WaitingCard(provider: c);
                 final e = entries[i - 1];
                 if (e is String) return _DayHeader(e);
                 final t = e as PendingTransaction;
                 return _TransactionTile(
                   t: t,
                   onRetry: () =>
-                      context.read<PendingSyncController>().retry(t.id),
+                      context.read<PendingSyncProvider>().retry(t.id),
                 );
               },
             ),
@@ -168,14 +189,14 @@ class _SyncingBanner extends StatelessWidget {
 
 /// Big card: "2 transactions waiting" + [Sync now]
 class _WaitingCard extends StatelessWidget {
-  const _WaitingCard({required this.controller});
-  final PendingSyncController controller;
+  const _WaitingCard({required this.provider});
+  final PendingSyncProvider provider;
 
   @override
   Widget build(BuildContext context) {
-    final n = controller.waitingCount;
-    final busy = controller.isSyncing;
-    final canSync = n > 0 && !busy && controller.isOnline;
+    final n = provider.waitingCount;
+    final busy = provider.isSyncing;
+    final canSync = n > 0 && !busy && provider.isOnline;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
@@ -238,7 +259,7 @@ class _WaitingCard extends StatelessWidget {
             height: 52,
             child: FilledButton.icon(
               onPressed: canSync
-                  ? () => context.read<PendingSyncController>().syncAll()
+                  ? () => context.read<PendingSyncProvider>().syncAll()
                   : null, // disabled: nothing waiting / offline / running
               style: FilledButton.styleFrom(
                 backgroundColor: AppTheme.primaryColor,
@@ -257,7 +278,7 @@ class _WaitingCard extends StatelessWidget {
               label: Text(
                 busy
                     ? 'Syncing…'
-                    : controller.isOnline
+                    : provider.isOnline
                     ? 'Sync now'
                     : 'Waiting for connection',
                 style: const TextStyle(

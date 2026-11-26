@@ -3,7 +3,7 @@ import 'package:aral_project/Admin/providers/items_repository.dart';
 import 'package:aral_project/Admin/providers/locations_repository.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Landing/landing_page.dart';
-import 'package:aral_project/StockKeeper/PendingSyncPage/pending_sync_model.dart';
+import 'package:aral_project/StockKeeper/models/pending_sync_model.dart';
 import 'package:aral_project/StockKeeper/providers/scan_flow_provider.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:aral_project/firebase_options.dart';
@@ -42,9 +42,7 @@ void main() async {
             locationsRepo: context.read<LocationsRepository>(),
           ),
         ),
-        ChangeNotifierProvider(
-          create: (context) => PendingSyncController(),
-        ),  
+        ChangeNotifierProvider(create: (context) => PendingSyncController()),
       ],
       child: const MyApp(),
     ),
