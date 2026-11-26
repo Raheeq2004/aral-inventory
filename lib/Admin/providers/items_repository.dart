@@ -61,7 +61,26 @@ class ItemsRepository {
     );
   }
 
-  /// ALL rows of [itemCode] (one row per LENGTH) — used by the keeper's QR scan.
+  /// The keeper's QR scan: ONE direct read of `items/(itemId - 1)`.
+  ///
+  /// Different from [itemById]: NO fallback search of the whole table.
+  /// Our rule is key = id − 1, so if that row isn't there (or holds another
+  /// id) the item doesn't exist → return null → "not registered".
+  /// That keeps a wrong label (e.g. ITM-999999) fast: one tiny read,
+  /// not a search through every item.
+  Future<ItemRow?> itemByIdDirect(int itemId) async {
+    final key = '${itemId - 1}';
+    final snap = await _itemsRef.child(key).get();
+    // `is! Map` = "is NOT a Map" (missing row, or unexpected data)
+    if (!snap.exists || snap.value is! Map) return null;
+    final data = Map<String, dynamic>.from(snap.value as Map);
+    // Safety: the row at this key must really be this id.
+    if ((data['id'] as num?)?.toInt() != itemId) return null;
+    return ItemRow(key: key, data: data);
+  }
+
+  /// ALL rows of [itemCode] (one row per LENGTH) — used when the keeper
+  /// TYPES an item code in "Enter manually".
   ///
   /// The QR label holds only the item code, and the same code can exist at
   /// several lengths (e.g. 1BMBM010-AR801 at 5 m, 6 m and 7 m). So we return
