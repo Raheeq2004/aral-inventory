@@ -67,7 +67,7 @@ class _LengthPicker extends StatelessWidget {
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: rows.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final r = rows[i];
                   final duplicate = (countByLength[r.length] ?? 0) > 1;
@@ -156,7 +156,10 @@ class _LengthTile extends StatelessWidget {
                 style: const TextStyle(color: AppTheme.textColorSecondary),
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_right, color: AppTheme.textColorSecondary),
+              const Icon(
+                Icons.chevron_right,
+                color: AppTheme.textColorSecondary,
+              ),
             ],
           ),
         ),

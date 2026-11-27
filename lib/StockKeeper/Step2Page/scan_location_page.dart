@@ -184,48 +184,45 @@ class _ScanLocationPageState extends State<ScanLocationPage> {
     final flow = context.watch<ScanFlowProvider>();
     final item = flow.session.item; // chosen in Step 1
 
-    return WorkerRouting(
-      title: 'Scan location',
-      child: Column(
-        children: [
-          Expanded(
-            child: ScannerView(
-              controller: _camera,
-              hint: 'Now scan the QR on the rack or shelf',
-              onCode: _onScan,
-              onRetry: _freshCamera, // "Try again" on the camera-error screen
-              busy: flow.isLooking,
-            ),
+    return Column(
+      children: [
+        Expanded(
+          child: ScannerView(
+            controller: _camera,
+            hint: 'Now scan the QR on the rack or shelf',
+            onCode: _onScan,
+            onRetry: _freshCamera, // "Try again" on the camera-error screen
+            busy: flow.isLooking,
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-              child: Column(
-                children: [
-                  const StepProgressBar(currentStep: 2),
-                  const SizedBox(height: 12),
-                  // The product from Step 1 (Joud's card, reused).
-                  // `if (item != null)`: safety — normally always set here.
-                  if (item != null)
-                    SummaryInfoCard(
-                      icon: Icons.qr_code_2_rounded,
-                      categoryLabel: 'PRODUCT',
-                      title: item.code,
-                      subtitle: productSubtitle(item),
-                    ),
-                  const SizedBox(height: 6),
-                  TextButton.icon(
-                    onPressed: flow.isLooking ? null : _enterManually,
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Can\'t scan? Enter code manually'),
+        ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+            child: Column(
+              children: [
+                const StepProgressBar(currentStep: 2),
+                const SizedBox(height: 12),
+                // The product from Step 1 (Joud's card, reused).
+                // `if (item != null)`: safety — normally always set here.
+                if (item != null)
+                  SummaryInfoCard(
+                    icon: Icons.qr_code_2_rounded,
+                    categoryLabel: 'PRODUCT',
+                    title: item.code,
+                    subtitle: productSubtitle(item),
                   ),
-                ],
-              ),
+                const SizedBox(height: 6),
+                TextButton.icon(
+                  onPressed: flow.isLooking ? null : _enterManually,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Can\'t scan? Enter code manually'),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

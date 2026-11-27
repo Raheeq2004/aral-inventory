@@ -3,8 +3,11 @@ import 'package:aral_project/Admin/providers/items_repository.dart';
 import 'package:aral_project/Admin/providers/locations_repository.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Landing/landing_page.dart';
+import 'package:aral_project/StockKeeper/Step1Page/scan_product_page.dart';
+
 import 'package:aral_project/StockKeeper/models/pending_sync_model.dart';
 import 'package:aral_project/StockKeeper/providers/scan_flow_provider.dart';
+import 'package:aral_project/StockKeeper/worker_routing.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:aral_project/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -59,13 +62,15 @@ class MyApp extends StatelessWidget {
       title: 'Aral Inventory',
       theme: AppTheme.lightTheme,
       //worker routing:
-      // initialRoute: '/LandingPage', // Must match an entry in routes map
-      // routes: {
-      //   '/LandingPage': (context) => const LandingPage(),
-      //   '/quantity': (context) =>
-      //       const WorkerRouting(title: 'Quantity', child: QuantityPage()),
-      // },
-      home: const LandingPage(),
+      initialRoute: '/itemScanPage', // Must match an entry in routes map
+      routes: {
+        '/itemScanPage': (context) => const WorkerRouting(
+          title: 'Product Scanner',
+          child: ScanProductPage(),
+        ),
+        '/landingPage': (context) => const LandingPage(),
+      },
+      //home: const LandingPage(),
     );
   }
 }

@@ -12,17 +12,18 @@ class ConnectivityBadge extends StatefulWidget {
 }
 
 class _ConnectivityBadgeState extends State<ConnectivityBadge> {
+  final ConnectivityService _connectivityService = ConnectivityService.instance;
   bool _isOnline = true;
-  final ConnectivityService _connectivityService = ConnectivityService();
-  late StreamSubscription<bool> _connectivitySubscription;
+  StreamSubscription<bool>? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
-    _initConnection();
+    _isOnline = _connectivityService.isOnline.value;
+    unawaited(_initConnection());
 
     _connectivitySubscription = _connectivityService.onConnectivityChanged
-        .listen((isOnline) {
+        .listen((bool isOnline) {
           if (mounted) {
             setState(() {
               _isOnline = isOnline;
@@ -32,7 +33,8 @@ class _ConnectivityBadgeState extends State<ConnectivityBadge> {
   }
 
   Future<void> _initConnection() async {
-    bool initialStatus = await _connectivityService.checkInitialConnection();
+    final bool initialStatus = await _connectivityService
+        .checkInitialConnection();
     if (mounted) {
       setState(() {
         _isOnline = initialStatus;
@@ -42,7 +44,7 @@ class _ConnectivityBadgeState extends State<ConnectivityBadge> {
 
   @override
   void dispose() {
-    _connectivitySubscription.cancel();
+    _connectivitySubscription?.cancel();
     super.dispose();
   }
 

@@ -1,10 +1,10 @@
 import 'dart:async';
+
 import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/ReportsPage/report_filters.dart';
 import 'package:aral_project/Admin/ReportsPage/report_widgets.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
-
 
 /// One searchable item: the row + everything we need pre-computed.
 class ItemEntry {
@@ -240,10 +240,7 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
   Widget _familyChips() {
     final all = widget.catalog.families;
     // what the SHORT view shows: the biggest families + the open one
-    final collapsed = <String>{
-      ...all.take(_chipCount),
-      if (_family != null) _family!,
-    }.toList();
+    final collapsed = <String>{...all.take(_chipCount), ?_family}.toList();
     final hidden = all.length - collapsed.length;
     final canExpand = hidden > 0;
     final shown = _allFamilies ? all : collapsed;
@@ -345,7 +342,9 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
                     shape: const StadiumBorder(),
                   ),
                   child: Text(
-                    _allShownPicked ? 'Unselect all' : 'Select all ${fmtCount(n)}',
+                    _allShownPicked
+                        ? 'Unselect all'
+                        : 'Select all ${fmtCount(n)}',
                     style: const TextStyle(
                       color: AppTheme.secondaryColor,
                       fontWeight: FontWeight.w600,
@@ -385,7 +384,7 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
                     ),
                   ),
                 ),
-                if (trailing != null) trailing,
+                ?trailing,
               ],
             ),
           ),
@@ -403,9 +402,7 @@ class _ItemPickerPageState extends State<ItemPickerPage> {
           color: isSelected
               ? AppTheme.secondaryContainer.withValues(alpha: 0.35)
               : null,
-          border: const Border(
-            bottom: BorderSide(color: AppTheme.borderColor),
-          ),
+          border: const Border(bottom: BorderSide(color: AppTheme.borderColor)),
         ),
         child: Row(
           children: [
