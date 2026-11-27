@@ -238,7 +238,7 @@ class TransactionData extends ChangeNotifier {
     changes['items/${itemRow.key}/${ItemRow.stockField}'] =
         ServerValue.increment(delta);
 
-    // If the item row in Firebase also stores a "Total Weight" field, keep it in sync.
+    // If the item row in Firebase stores a "Total Weight" field, keep it in sync.
     if (itemRow.data.containsKey('Total Weight')) {
       final weightDelta = delta * itemRow.length * itemRow.sw;
       changes['items/${itemRow.key}/Total Weight'] = ServerValue.increment(
@@ -352,7 +352,7 @@ class TransactionData extends ChangeNotifier {
     final id = original.transactionId!;
     final now = DateTime.now();
     final root = FirebaseDatabase.instance.ref();
-    final newId = await _nextTransactionId();
+    final newId = await _nextTransactionIdFast(root);
 
     final reversal = TransactionModel(
       transactionId: newId,
@@ -421,21 +421,29 @@ class TransactionData extends ChangeNotifier {
     return newId;
   }
 
-  Future<String> _nextTransactionId() async {
-    var next =
-        transactionDataList.fold<int>(
-          0,
-          (biggest, t) => t.numericId > biggest ? t.numericId : biggest,
-        ) +
-        1;
-    while (true) {
-      final id = 'tx_${next.toString().padLeft(3, '0')}';
-      final snap = await FirebaseDatabase.instance
-          .ref('transactions/$id')
-          .get();
-      if (!snap.exists) return id;
-      next++;
+  Future<String> _nextTransactionIdFast(DatabaseReference root) async {
+    int maxNum = transactionDataList.fold<int>(
+      0,
+      (biggest, t) => t.numericId > biggest ? t.numericId : biggest,
+    );
+
+    final snap = await root
+        .child('transactions')
+        .orderByKey()
+        .limitToLast(1)
+        .get();
+    if (snap.exists && snap.value is Map) {
+      final map = Map<dynamic, dynamic>.from(snap.value as Map);
+      for (final k in map.keys) {
+        final match = RegExp(r'(\d+)$').firstMatch(k.toString());
+        if (match != null) {
+          final n = int.parse(match.group(1)!);
+          if (n > maxNum) maxNum = n;
+        }
+      }
     }
+
+    return 'tx_${(maxNum + 1).toString().padLeft(3, '0')}';
   }
 
   Future<void> _ensureTransactionsNodeExists(DatabaseReference root) async {
@@ -456,7 +464,9 @@ class TransactionData extends ChangeNotifier {
   }) async {
     final normalizedDir = direction.toUpperCase() == 'OUT' ? 'OUT' : 'IN';
     final stockDelta = normalizedDir == 'IN' ? quantity : -quantity;
-    final resolvedType = type ?? defaultTypeFor(normalizedDir);
+    final resolvedType = (type != null && type.trim().isNotEmpty)
+        ? type.trim()
+        : defaultTypeFor(normalizedDir);
     final normalizedLocation = locationCode.trim().toUpperCase();
 
     final row = await _itemsRepo.requireItem(
@@ -493,7 +503,7 @@ class TransactionData extends ChangeNotifier {
     await _ensureTransactionsNodeExists(root);
 
     final now = DateTime.now();
-    final newId = await _nextTransactionId();
+    final newId = await _nextTransactionIdFast(root);
     final resolvedItemId = item.id ?? (row.data['id'] as num?)?.toInt();
 
     final tx = TransactionModel(

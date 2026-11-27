@@ -1,7 +1,7 @@
 import 'dart:async'; // TimeoutException
 
 import 'package:aral_project/Admin/Models/item_row.dart';
-import 'package:aral_project/Admin/Models/transaction_types.dart'; // normalizeType, kReversalType
+import 'package:aral_project/Admin/Models/transaction_types.dart';
 import 'package:aral_project/Admin/Models/transactions_model.dart';
 import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/SharedComponents/app_snackbar.dart';
@@ -52,13 +52,33 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
 
   TransactionModel get tx => widget.transaction;
 
+  String _resolveTypeLabel(String? stored, String direction) {
+    final raw = (stored ?? '').trim();
+    if (raw.isNotEmpty) {
+      final allTypes = <TransactionType>[
+        ...kTransactionTypes,
+        ...kRetiredTypes,
+        kReversalType,
+      ];
+      for (final t in allTypes) {
+        if (t.label == raw) return t.label;
+      }
+
+      final byCode = typeByCode(raw);
+      if (byCode != null) return byCode.label;
+    }
+
+    final normalizedCode = normalizeType(raw, direction);
+    return typeByCode(normalizedCode)?.label ?? normalizedCode;
+  }
+
   @override
   void initState() {
     super.initState();
     _locationCtrl = TextEditingController(text: tx.locationCode);
     _qtyCtrl = TextEditingController(text: tx.quantity.toString());
     _direction = tx.direction;
-    _originalType = normalizeType(tx.type, tx.direction);
+    _originalType = _resolveTypeLabel(tx.type, tx.direction);
     _type = _originalType;
     _online = ConnectivityService.instance.isOnline.value;
     _loadItem();
@@ -358,7 +378,7 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                                 _direction = newDirection;
                                 _type = _direction == tx.direction
                                     ? _originalType
-                                    : null;
+                                    : _resolveTypeLabel(null, _direction);
                               }),
                       ),
                       const SizedBox(height: 16),
@@ -391,9 +411,9 @@ class _TransactionDetailPageState extends State<TransactionDetailPage> {
                         value: _type,
                         enabled: !readOnly,
                         label: 'Transaction type',
-                        onChanged: (code) {
-                          if (code != null) {
-                            setState(() => _type = code);
+                        onChanged: (label) {
+                          if (label != null) {
+                            setState(() => _type = label);
                           }
                         },
                       ),

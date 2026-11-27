@@ -32,14 +32,20 @@ class _QuantityPageState extends State<QuantityPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   String _selectedOperation = 'IN';
-  late String _selectedType = defaultTypeFor(_selectedOperation);
+  late String _selectedType = _defaultLabelFor(_selectedOperation);
   final TextEditingController _quantityController = TextEditingController(
     text: '1',
   );
 
   bool _isSubmitting = false;
+  bool _submitLock = false;
   late bool _online;
   StreamSubscription<bool>? _connectionSub;
+
+  String _defaultLabelFor(String direction) {
+    final code = defaultTypeFor(direction);
+    return typeByCode(code)?.label ?? code;
+  }
 
   @override
   void initState() {
@@ -78,8 +84,11 @@ class _QuantityPageState extends State<QuantityPage> {
   }
 
   Future<void> _submit(ItemRow? item, String? location) async {
-    if (_isSubmitting) return;
+    if (_isSubmitting || _submitLock) return;
+    _submitLock = true;
+
     if (item == null || location == null) {
+      _submitLock = false;
       showAppSnackBar(
         context,
         'Missing product or location. Scan again.',
@@ -88,11 +97,15 @@ class _QuantityPageState extends State<QuantityPage> {
       return;
     }
 
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      _submitLock = false;
+      return;
+    }
 
     final int qty = int.parse(_quantityController.text.trim());
 
     if (_selectedOperation == 'OUT' && _online && qty > item.quantity) {
+      _submitLock = false;
       showAppSnackBar(
         context,
         'Not enough stock (${item.quantity} pcs available).',
@@ -115,7 +128,7 @@ class _QuantityPageState extends State<QuantityPage> {
               stockKeeperId: 'StockKeeper',
               type: _selectedType,
             )
-            .timeout(const Duration(seconds: 10));
+            .timeout(const Duration(seconds: 20));
 
         if (!mounted) return;
         showAppSnackBar(context, 'Transaction saved');
@@ -137,20 +150,25 @@ class _QuantityPageState extends State<QuantityPage> {
       context.read<ScanFlowProvider>().reset();
       Navigator.of(context).popUntil((route) => route.isFirst);
     } on InsufficientStockException catch (e) {
-      showAppSnackBar(context, e.message, isError: true);
+      if (mounted) showAppSnackBar(context, e.message, isError: true);
     } on TimeoutException {
-      showAppSnackBar(
-        context,
-        'Connection timed out. Check your internet and try again.',
-        isError: true,
-      );
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          'Connection timed out. Check your internet and try again.',
+          isError: true,
+        );
+      }
     } catch (_) {
-      showAppSnackBar(
-        context,
-        'Could not save transaction. Try again.',
-        isError: true,
-      );
+      if (mounted) {
+        showAppSnackBar(
+          context,
+          'Could not save transaction. Try again.',
+          isError: true,
+        );
+      }
     } finally {
+      _submitLock = false;
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
@@ -220,12 +238,12 @@ class _QuantityPageState extends State<QuantityPage> {
                           const SizedBox(height: 10),
                           DirectionSegmentedButton(
                             value: _selectedOperation,
-                            onChanged: _isSubmitting
+                            onChanged: (_isSubmitting || _submitLock)
                                 ? null
                                 : (val) {
                                     setState(() {
                                       _selectedOperation = val;
-                                      _selectedType = defaultTypeFor(val);
+                                      _selectedType = _defaultLabelFor(val);
                                     });
                                     _formKey.currentState?.validate();
                                   },
@@ -235,10 +253,10 @@ class _QuantityPageState extends State<QuantityPage> {
                           TransactionTypeDropdown(
                             direction: _selectedOperation,
                             value: _selectedType,
-                            enabled: !_isSubmitting,
-                            onChanged: (code) {
-                              if (code != null) {
-                                setState(() => _selectedType = code);
+                            enabled: !(_isSubmitting || _submitLock),
+                            onChanged: (label) {
+                              if (label != null) {
+                                setState(() => _selectedType = label);
                               }
                             },
                           ),
@@ -266,7 +284,7 @@ class _QuantityPageState extends State<QuantityPage> {
                                   color: AppTheme.surfaceColor,
                                 ),
                                 child: IconButton(
-                                  onPressed: _isSubmitting
+                                  onPressed: (_isSubmitting || _submitLock)
                                       ? null
                                       : () => _updateQuantity(
                                           -1,
@@ -285,7 +303,7 @@ class _QuantityPageState extends State<QuantityPage> {
                               Expanded(
                                 child: TextFormField(
                                   controller: _quantityController,
-                                  readOnly: _isSubmitting,
+                                  readOnly: _isSubmitting || _submitLock,
                                   textAlign: TextAlign.center,
                                   keyboardType: TextInputType.number,
                                   inputFormatters: [
@@ -340,7 +358,7 @@ class _QuantityPageState extends State<QuantityPage> {
                                   color: AppTheme.primaryColor,
                                 ),
                                 child: IconButton(
-                                  onPressed: _isSubmitting
+                                  onPressed: (_isSubmitting || _submitLock)
                                       ? null
                                       : () => _updateQuantity(
                                           1,
@@ -429,10 +447,10 @@ class _QuantityPageState extends State<QuantityPage> {
                     foregroundColor: Colors.white,
                     shape: const StadiumBorder(),
                   ),
-                  onPressed: _isSubmitting
+                  onPressed: (_isSubmitting || _submitLock)
                       ? null
                       : () => _submit(item, location),
-                  icon: _isSubmitting
+                  icon: (_isSubmitting || _submitLock)
                       ? const SizedBox(
                           width: 18,
                           height: 18,
@@ -443,7 +461,9 @@ class _QuantityPageState extends State<QuantityPage> {
                         )
                       : const Icon(Icons.check_rounded, size: 20),
                   label: Text(
-                    _isSubmitting ? 'Submitting…' : 'Submit transaction',
+                    (_isSubmitting || _submitLock)
+                        ? 'Submitting…'
+                        : 'Submit transaction',
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
