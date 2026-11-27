@@ -18,6 +18,9 @@ enum LookupStatus {
   // The CAMERA read a QR that isn't one of ours (not ITM-…, not WH…):
   // a supplier barcode, an old test label, a random QR…
   notOurLabel,
+  // TYPED text that can't be an id or an item code at all (e.g. "RAHEEQ"):
+  // not "not registered" — it's simply not a code.
+  invalidCode,
   offline, // the phone has no internet
   failed, // online, but Firebase gave an error / took too long
 }
@@ -91,6 +94,22 @@ class ScanFlowProvider extends ChangeNotifier {
   /// Only digits, e.g. "1201" (allowed when the keeper TYPES it, not scanned).
   static final RegExp _digitsOnly = RegExp(r'^\d+$');
 
+  /// What a real ITEM CODE looks like ("2MFMF-BT128", "1BMBM010-AR801"):
+  ///   (?=.*[A-Z])  → somewhere it has at least ONE letter
+  ///   (?=.*\d)     → somewhere it has at least ONE digit
+  ///   (?=…) is a "look-ahead": it CHECKS without using up characters.
+  ///   [A-Z0-9]     → starts with a letter or digit
+  ///   [A-Z0-9./-]{2,29} → then 2–29 more letters, digits, . / or -
+  ///                  (so 3–30 characters in total)
+  /// "RAHEEQ" has no digit → not an item code. "12" is too short.
+  static final RegExp _itemCodeShape = RegExp(
+    r'^(?=.*[A-Z])(?=.*\d)[A-Z0-9][A-Z0-9./-]{2,29}$',
+  );
+
+  /// true if [code] COULD be an item code (we still ask Firebase if it exists).
+  static bool looksLikeItemCode(String code) =>
+      _itemCodeShape.hasMatch(code.trim().toUpperCase());
+
   /// true if [code] looks like a PRODUCT label ("ITM-1201").
   /// Used on Step 2 to say "this is a product label, scan the shelf".
   static bool looksLikeProduct(String code) =>
@@ -125,8 +144,9 @@ class ScanFlowProvider extends ChangeNotifier {
   ///   2. A shelf code (WH1-B3-02) → not a product, no need to ask Firebase.
   ///   3. Anything else:
   ///      • from the CAMERA → [LookupStatus.notOurLabel] (not an ARAL label)
-  ///      • TYPED by hand → treated as an ITEM CODE ("2MFMF-BT128")
-  ///        → search by code (+ "Which length?" sheet if needed).
+  ///      • TYPED by hand and shaped like an item code ("2MFMF-BT128")
+  ///        → search by code (+ "Which length?" sheet if needed)
+  ///      • TYPED but not a code at all ("RAHEEQ") → [LookupStatus.invalidCode]
   ///
   /// Returns a [ProductLookup] and lets the PAGE decide what to show
   /// (go on, length sheet, "not found" dialog…). When exactly one row
@@ -146,6 +166,11 @@ class ScanFlowProvider extends ChangeNotifier {
     // only when TYPED (a keeper may know the code but not the id).
     if (id == null && !typed) {
       return ProductLookup(LookupStatus.notOurLabel, code);
+    }
+    // TYPED, not an id, and doesn't even look like an item code
+    // → don't ask Firebase, tell the keeper the text itself is wrong.
+    if (id == null && !looksLikeItemCode(code)) {
+      return ProductLookup(LookupStatus.invalidCode, code);
     }
 
     _isLooking = true;

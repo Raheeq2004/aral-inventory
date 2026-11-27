@@ -113,6 +113,23 @@ class _ScanProductPageState extends State<ScanProductPage> {
             await _enterManually();
           }
 
+        case LookupStatus.invalidCode:
+          // Typed text that is neither an item number nor an item code.
+          HapticFeedback.heavyImpact();
+          final retry = await showNotFoundDialog(
+            context,
+            title: 'Check the code',
+            message:
+                '"${result.code}" isn\'t an item number or an item code. '
+                'Type the number under the QR label (like ITM-1201) '
+                'or the item code (like 2MFMF-BT128).',
+          );
+          // "Enter manually" → open the sheet again so they can retype
+          if (retry == NotFoundAction.enterManually && mounted) {
+            _paused = false;
+            await _enterManually();
+          }
+
         case LookupStatus.notOurLabel:
           keepLastCode = true;
           // A QR that isn't an ITM-… product label (supplier barcode, old
