@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:aral_project/Admin/Models/item_row.dart';
 import 'package:aral_project/Admin/providers/filter_provider.dart';
 import 'package:aral_project/Admin/providers/items_repository.dart';
 import 'package:aral_project/Admin/providers/locations_repository.dart';
@@ -5,10 +8,11 @@ import 'package:aral_project/Admin/providers/transactions_repository.dart';
 import 'package:aral_project/Landing/landing_page.dart';
 import 'package:aral_project/StockKeeper/Step1Page/scan_product_page.dart';
 
-import 'package:aral_project/StockKeeper/models/pending_sync_model.dart';
+import 'package:aral_project/StockKeeper/providers/pending_sync_provider.dart';
 import 'package:aral_project/StockKeeper/providers/scan_flow_provider.dart';
 import 'package:aral_project/StockKeeper/worker_routing.dart';
 import 'package:aral_project/Theme/theme.dart';
+import 'package:aral_project/connectivity/connectivity_service.dart';
 import 'package:aral_project/firebase_options.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -45,7 +49,44 @@ void main() async {
             locationsRepo: context.read<LocationsRepository>(),
           ),
         ),
-        ChangeNotifierProvider(create: (context) => PendingSyncController()),
+        // STOCK KEEPER: transactions saved offline + their sync status.
+        ChangeNotifierProvider(
+          create: (context) {
+            final txData = context.read<TransactionData>();
+            final pending = PendingSyncProvider(
+              // the REAL send: same call the quantity page makes when online
+              pusher: (t) async {
+                final item = t.item;
+                if (item == null) return 'Missing item data';
+                try {
+                  await txData
+                      .createTransaction(
+                        item: item,
+                        locationCode: t.location,
+                        direction: t.direction,
+                        quantity: t.quantity,
+                        stockKeeperId: 'StockKeeper',
+                        type: t.type,
+                      )
+                      .timeout(const Duration(seconds: 20));
+                  return null; // success
+                } on InsufficientStockException catch (e) {
+                  return e.message;
+                } on TimeoutException {
+                  return 'Connection timed out';
+                } catch (_) {
+                  return 'Could not reach the server';
+                }
+              },
+            );
+            // going back online starts the sync, from any page
+            pending.setOnline(ConnectivityService.instance.isOnline.value);
+            ConnectivityService.instance.onConnectivityChanged.listen(
+              pending.setOnline,
+            );
+            return pending;
+          },
+        ),
       ],
       child: const MyApp(),
     ),

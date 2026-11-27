@@ -1,9 +1,8 @@
+import 'package:aral_project/Admin/Models/item_row.dart';
+
 /// The 3 states a saved transaction can be in.
 enum SyncStatus { pending, synced, failed }
 
-/// One row on the Pending sync page.
-/// Small on purpose: it only holds what the page SHOWS. The real
-/// transaction (item id, location, createdBy …) stays in the offline queue.
 class PendingTransaction {
   const PendingTransaction({
     required this.id,
@@ -15,6 +14,8 @@ class PendingTransaction {
     this.status = SyncStatus.pending,
     this.syncedAt,
     this.error,
+    this.item,
+    this.type,
   });
 
   final String id;
@@ -26,6 +27,11 @@ class PendingTransaction {
   final SyncStatus status;
   final DateTime? syncedAt;
   final String? error; // only used when status == failed
+
+  /// What the real send needs (TransactionData.createTransaction):
+  /// the full item row and the transaction type the worker picked.
+  final ItemRow? item;
+  final String? type;
 
   PendingTransaction copyWith({
     SyncStatus? status,
@@ -44,6 +50,8 @@ class PendingTransaction {
       syncedAt: syncedAt ?? this.syncedAt,
       // the error text only lives while the row is "failed"
       error: s == SyncStatus.failed ? (error ?? this.error) : null,
+      item: item,
+      type: type,
     );
   }
 }

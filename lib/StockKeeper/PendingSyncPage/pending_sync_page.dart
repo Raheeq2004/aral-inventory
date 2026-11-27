@@ -1,36 +1,21 @@
 import 'package:aral_project/connectivity/connectivity_badge.dart';
-import 'package:aral_project/StockKeeper/Models/pending_transaction.dart';
+import 'package:aral_project/StockKeeper/models/pending_transaction.dart';
 import 'package:aral_project/StockKeeper/providers/pending_sync_provider.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-// =====================================================================
-// ARAL Inventory – Pending sync page (worker)
-// Figma: "Pending sync". Reads everything from PendingSyncProvider.
-// =====================================================================
 
 class PendingSyncPage extends StatelessWidget {
   const PendingSyncPage({super.key, this.onLogout, this.onBack});
 
-  /// Logout icon (top right). TODO(integrate): connect to the real logout.
+
   final VoidCallback? onLogout;
 
-  /// Back arrow (top left). Leave it null to simply go back to the page
-  /// that opened this one (e.g. the quantity page, when it pushed us).
-  /// TODO(integrate): while this page is the app's `home`, there is nothing
-  /// to go back to, so pass the navigation to the quantity page here, e.g.
-  ///   onBack: () => Navigator.of(context).pushReplacement(MaterialPageRoute(
-  ///     builder: (_) => const WorkerRouting(
-  ///       title: 'Quantity', child: QuantityPage())))
   final VoidCallback? onBack;
 
-  /// DEMO route: gives the page its own fake provider so you can open it
-  /// alone:  Navigator.push(context, PendingSyncPage.demoRoute());
-  /// TODO(integrate): once PendingSyncProvider is registered in
-  /// main.dart's MultiProvider, use `MaterialPageRoute(builder: (_) =>
-  /// const PendingSyncPage())` instead and delete this.
+
   static Route<void> demoRoute() => MaterialPageRoute(
     builder: (_) => ChangeNotifierProvider(
       create: (_) => PendingSyncProvider.demo(),
@@ -118,9 +103,11 @@ class PendingSyncPage extends StatelessWidget {
 }
 
 /// Shows the dark "Saved on this phone · will sync when online   VIEW"
-/// message. TODO(integrate): call it from the quantity page right after
-/// a transaction is saved while offline.
+/// message. VIEW opens the real Pending sync page.
 void showSavedOfflineSnack(BuildContext context) {
+  // taken NOW: the quantity page is closed right after saving, so its
+  // context is gone by the time VIEW is tapped
+  final navigator = Navigator.of(context);
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
@@ -130,17 +117,14 @@ void showSavedOfflineSnack(BuildContext context) {
         action: SnackBarAction(
           label: 'VIEW',
           textColor: AppTheme.primaryContainer,
-          onPressed: () =>
-              // TODO(integrate): use the non-demo route (see demoRoute)
-              Navigator.of(context).push(PendingSyncPage.demoRoute()),
+          onPressed: () => navigator.push(
+            MaterialPageRoute(builder: (_) => const PendingSyncPage()),
+          ),
         ),
       ),
     );
 }
 
-// ---------------------------------------------------------------------
-// Pieces of the page (private: only this file uses them)
-// ---------------------------------------------------------------------
 
 /// Blue strip: "Back online • Syncing transactions…      2 of 3"
 class _SyncingBanner extends StatelessWidget {

@@ -1,3 +1,6 @@
+import 'package:aral_project/StockKeeper/PendingSyncPage/pending_sync_page.dart';
+import 'package:aral_project/StockKeeper/providers/pending_sync_provider.dart';
+import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 
 class EndDrawerMenu extends StatelessWidget {
@@ -18,6 +21,24 @@ class EndDrawerMenu extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.sync_rounded),
+              title: const Text('Pending sync'),
+              // number of transactions still waiting on this phone
+              trailing: Builder(
+                builder: (context) {
+                  final n = context.watch<PendingSyncProvider>().waitingCount;
+                  return n == 0 ? const SizedBox.shrink() : Badge.count(count: n);
+                },
+              ),
+              onTap: () {
+                final navigator = Navigator.of(context);
+                navigator.pop(); // close the drawer first
+                navigator.push(
+                  MaterialPageRoute(builder: (_) => const PendingSyncPage()),
+                );
+              },
+            ),
             ListTile(
               hoverColor: const Color(0xFFFDE6D2).withValues(alpha: 0.7),
               splashColor: const Color(0xFFFDE6D2),

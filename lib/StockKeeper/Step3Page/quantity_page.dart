@@ -12,8 +12,9 @@ import 'package:aral_project/StockKeeper/PendingSyncPage/pending_sync_page.dart'
 import 'package:aral_project/StockKeeper/Step3Page/components/quick_add_button.dart';
 import 'package:aral_project/StockKeeper/Step3Page/components/summary_info_cards.dart';
 import 'package:aral_project/StockKeeper/components/step_progress_bar.dart';
-import 'package:aral_project/StockKeeper/models/pending_sync_model.dart';
+import 'package:aral_project/StockKeeper/models/pending_transaction.dart';
 import 'package:aral_project/StockKeeper/models/scan_labels.dart';
+import 'package:aral_project/StockKeeper/providers/pending_sync_provider.dart';
 import 'package:aral_project/StockKeeper/providers/scan_flow_provider.dart';
 import 'package:aral_project/Theme/theme.dart';
 import 'package:aral_project/connectivity/connectivity_service.dart';
@@ -57,7 +58,7 @@ class _QuantityPageState extends State<QuantityPage> {
     ) {
       if (!mounted) return;
       setState(() => _online = isOnline);
-      context.read<PendingSyncController>().setOnline(isOnline);
+      context.read<PendingSyncProvider>().setOnline(isOnline);
     });
   }
 
@@ -133,7 +134,7 @@ class _QuantityPageState extends State<QuantityPage> {
         if (!mounted) return;
         showAppSnackBar(context, 'Transaction saved');
       } else {
-        context.read<PendingSyncController>().add(
+        context.read<PendingSyncProvider>().add(
           PendingTransaction(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
             itemName: '${item.code} (${lengthText(item.length)})',
@@ -141,6 +142,8 @@ class _QuantityPageState extends State<QuantityPage> {
             quantity: qty,
             location: location,
             savedAt: DateTime.now(),
+            item: item,
+            type: _selectedType,
           ),
         );
         if (!mounted) return;

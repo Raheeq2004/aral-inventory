@@ -1,67 +1,72 @@
-import 'package:aral_project/StockKeeper/Models/pending_transaction.dart';
+import 'package:aral_project/StockKeeper/models/pending_transaction.dart';
 import 'package:flutter/foundation.dart';
 
 
-/// Holds the list + runs the sync. Used with `provider`:
-///   context.watch<PendingSyncProvider>()  → rebuilds the page
-///   context.read<PendingSyncProvider>()    → call a method (no rebuild)
-class PendingSyncProvider extends ChangeNotifier {
-  PendingSyncProvider([List<PendingTransaction> items = const []])
-    : _items = List.of(items);
+typedef PendingPusher = Future<String?> Function(PendingTransaction t);
 
-  /// DEMO data = the same 5 rows as the Figma mock-up.
-  /// TODO(integrate): delete this factory once the real queue is connected.
+class PendingSyncProvider extends ChangeNotifier {
+  PendingSyncProvider({
+    List<PendingTransaction> items = const [],
+    PendingPusher? pusher,
+  }) : _items = List.of(items),
+       _pusher = pusher;
+
+  final PendingPusher? _pusher;
+
+
   factory PendingSyncProvider.demo() {
     final now = DateTime.now();
     DateTime at(int h, int m) => DateTime(now.year, now.month, now.day, h, m);
-    return PendingSyncProvider([
-      PendingTransaction(
-        id: 'd1',
-        itemName: 'Aluminum Profile 6063-T5',
-        direction: 'IN',
-        quantity: 20,
-        location: 'WH1 / B3 / S2',
-        savedAt: at(10, 42),
-      ),
-      PendingTransaction(
-        id: 'd2',
-        itemName: 'Aluminum Sheet 1050 – 2mm',
-        direction: 'OUT',
-        quantity: 6,
-        location: 'WH1 / A1 / S4',
-        savedAt: at(10, 42),
-      ),
-      PendingTransaction(
-        id: 'd3',
-        itemName: 'Window Frame Profile 45mm',
-        direction: 'IN',
-        quantity: 40,
-        location: 'WH2 / C2 / S1',
-        savedAt: at(10, 30),
-        status: SyncStatus.synced,
-        syncedAt: at(10, 58),
-      ),
-      PendingTransaction(
-        id: 'd4',
-        itemName: 'Door Handle Set – Black',
-        direction: 'OUT',
-        quantity: 12,
-        location: 'WH1 / D4 / S3',
-        savedAt: at(10, 20),
-        status: SyncStatus.synced,
-        syncedAt: at(10, 58),
-      ),
-      PendingTransaction(
-        id: 'd5',
-        itemName: 'Aluminum Profile 6060-T6',
-        direction: 'OUT',
-        quantity: 30,
-        location: 'WH1 / B1 / S1',
-        savedAt: at(10, 10),
-        status: SyncStatus.failed,
-        error: 'Could not reach the server',
-      ),
-    ]);
+    return PendingSyncProvider(
+      items: [
+        PendingTransaction(
+          id: 'd1',
+          itemName: 'Aluminum Profile 6063-T5',
+          direction: 'IN',
+          quantity: 20,
+          location: 'WH1 / B3 / S2',
+          savedAt: at(10, 42),
+        ),
+        PendingTransaction(
+          id: 'd2',
+          itemName: 'Aluminum Sheet 1050 – 2mm',
+          direction: 'OUT',
+          quantity: 6,
+          location: 'WH1 / A1 / S4',
+          savedAt: at(10, 42),
+        ),
+        PendingTransaction(
+          id: 'd3',
+          itemName: 'Window Frame Profile 45mm',
+          direction: 'IN',
+          quantity: 40,
+          location: 'WH2 / C2 / S1',
+          savedAt: at(10, 30),
+          status: SyncStatus.synced,
+          syncedAt: at(10, 58),
+        ),
+        PendingTransaction(
+          id: 'd4',
+          itemName: 'Door Handle Set – Black',
+          direction: 'OUT',
+          quantity: 12,
+          location: 'WH1 / D4 / S3',
+          savedAt: at(10, 20),
+          status: SyncStatus.synced,
+          syncedAt: at(10, 58),
+        ),
+        PendingTransaction(
+          id: 'd5',
+          itemName: 'Aluminum Profile 6060-T6',
+          direction: 'OUT',
+          quantity: 30,
+          location: 'WH1 / B1 / S1',
+          savedAt: at(10, 10),
+          status: SyncStatus.failed,
+          error: 'Could not reach the server',
+        ),
+      ],
+    );
   }
 
   final List<PendingTransaction> _items;
@@ -70,22 +75,17 @@ class PendingSyncProvider extends ChangeNotifier {
   int _syncDone = 0;
   int _syncTotal = 0;
 
-  // ---------------- what the page reads ----------------
   List<PendingTransaction> get items => List.unmodifiable(_items);
   bool get isOnline => _isOnline;
   bool get isSyncing => _isSyncing;
   int get syncDone => _syncDone; // the "2" in "2 of 3"
   int get syncTotal => _syncTotal; // the "3" in "2 of 3"
 
-  /// Rows still waiting to be sent (the number in "2 transactions waiting").
   int get waitingCount =>
       _items.where((t) => t.status == SyncStatus.pending).length;
 
   // ---------------- what other pages / services call ----------------
 
-  /// Call after a worker saves a transaction (quantity page → Save).
-  /// TODO(integrate): the real save flow should write to the local queue
-  /// FIRST, then call this so the page shows the new row.
   void add(PendingTransaction t) {
     _items.insert(0, t);
     notifyListeners();
@@ -115,7 +115,6 @@ class PendingSyncProvider extends ChangeNotifier {
     await _sync([id]);
   }
 
-  // ---------------- internals ----------------
 
   Future<void> _sync(List<String> ids) async {
     if (_isSyncing || !_isOnline || ids.isEmpty) return;
@@ -140,19 +139,19 @@ class PendingSyncProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Sends ONE transaction to Firebase.
-  /// Returns null on success, or an error message on failure.
-  ///
-  /// TODO(integrate): replace the fake delay with the real write, e.g.
-  ///   try {
-  ///     await transactionsRepository.push(queueItemFor(id));
-  ///     return null;
-  ///   } catch (e) {
-  ///     return e.toString();
-  ///   }
   Future<String?> _pushToServer(String id) async {
-    await Future<void>.delayed(const Duration(milliseconds: 900));
-    return null; // demo: always succeeds
+    final i = _items.indexWhere((t) => t.id == id);
+    if (i == -1) return null;
+    final push = _pusher;
+    if (push == null) {
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+      return null;
+    }
+    try {
+      return await push(_items[i]);
+    } catch (e) {
+      return 'Could not reach the server';
+    }
   }
 
   void _replace(
