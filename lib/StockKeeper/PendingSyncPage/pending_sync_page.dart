@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-
+// theres an issue with the scanning when we are offline
 class PendingSyncPage extends StatelessWidget {
   const PendingSyncPage({super.key, this.onLogout, this.onBack});
 
