@@ -194,7 +194,12 @@ class _ScanProductPageState extends State<ScanProductPage> {
     // (back arrow, or after the transaction is saved).
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const ScanLocationPage()),
+      MaterialPageRoute(
+        builder: (_) => const WorkerRouting(
+          title: 'Location Scanner',
+          child: ScanLocationPage(),
+        ),
+      ),
     );
     // Back on Step 1 → start the camera again for the next product.
     // (Safely: Step 2 may still be releasing ITS camera at this moment.)
@@ -238,44 +243,41 @@ class _ScanProductPageState extends State<ScanProductPage> {
     // watch: rebuild when the provider changes (to show "Checking…").
     final busy = context.watch<ScanFlowProvider>().isLooking;
 
-    return WorkerRouting(
-      title: 'Scan product',
-      child: Column(
-        children: [
-          // ---- camera (takes all the space left) ----
-          // (No "scan method" choice: the team decided on the phone camera
-          //  only — no RFID / NFC — so the camera gets the full width.)
-          Expanded(
-            child: ScannerView(
-              controller: _camera,
-              hint: 'Point the camera at the QR label on the product',
-              onCode: _onScan,
-              onRetry: _freshCamera, // "Try again" on the camera-error screen
-              busy: busy,
-            ),
+    return Column(
+      children: [
+        // ---- camera (takes all the space left) ----
+        // (No "scan method" choice: the team decided on the phone camera
+        //  only — no RFID / NFC — so the camera gets the full width.)
+        Expanded(
+          child: ScannerView(
+            controller: _camera,
+            hint: 'Point the camera at the QR label on the product',
+            onCode: _onScan,
+            onRetry: _freshCamera, // "Try again" on the camera-error screen
+            busy: busy,
           ),
+        ),
 
-          // ---- bottom: steps + manual entry ----
-          // SafeArea: keep it above the phone's own navigation bar.
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-              child: Column(
-                children: [
-                  const StepProgressBar(currentStep: 1),
-                  const SizedBox(height: 6),
-                  TextButton.icon(
-                    onPressed: busy ? null : _enterManually,
-                    icon: const Icon(Icons.edit_outlined, size: 18),
-                    label: const Text('Can\'t scan? Enter code manually'),
-                  ),
-                ],
-              ),
+        // ---- bottom: steps + manual entry ----
+        // SafeArea: keep it above the phone's own navigation bar.
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+            child: Column(
+              children: [
+                const StepProgressBar(currentStep: 1),
+                const SizedBox(height: 6),
+                TextButton.icon(
+                  onPressed: busy ? null : _enterManually,
+                  icon: const Icon(Icons.edit_outlined, size: 18),
+                  label: const Text('Can\'t scan? Enter code manually'),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

@@ -2,35 +2,30 @@ class TransactionModel {
   final String? transactionId;
   final int numericId;
 
-  // NEW DB (Joud's structure): the transaction stores only the item's `id`
-  // (items/0 has id 1, items/1 has id 2 … → row = itemId − 1).
-  // The code/length/SW below are NOT saved in the transaction any more:
-  // the provider fills them from the `items` table after loading.
+  // Stored directly on the transaction in Firebase Realtime Database
   final int? itemId;
+  final String locationCode;
+  final int quantity;
+  final String direction; // 'IN' or 'OUT'
+  final String type;
+  // Maps to `createdBy` in Firebase Realtime Database
+  final String stockKeeperId;
+  final DateTime timestamp;
+
+  // Hydrated from `items` / location helpers in memory
   final String itemCode;
   final String itemName;
-
-  // ---- NEW: Item & Location Metadata Columns ----
   final String uomCode;
   final String color;
   final double length;
   final double sw;
   final double totalWeight;
-  final String locationCode;
   final String warehouse;
   final String rack;
   final int shelfNo;
   final int stock;
 
-  final int quantity;
-  final String direction; // 'IN' or 'OUT'
-  final String type;
-  // Who logged it. In Firebase this field is now called `createdBy`
-  // (we keep the Dart name stockKeeperId so the other pages still work).
-  final String stockKeeperId;
-  final DateTime timestamp;
-
-  // ---- Audit / Edit / Reverse Fields ----
+  // Audit / edit / reverse fields
   final String? editedBy;
   final DateTime? editedAt;
   final bool reversed;
@@ -43,23 +38,23 @@ class TransactionModel {
     this.transactionId,
     required this.numericId,
     this.itemId,
-    required this.itemCode,
-    required this.itemName,
-    required this.uomCode,
-    required this.color,
-    required this.length,
-    required this.sw,
-    required this.totalWeight,
     required this.locationCode,
-    required this.warehouse,
-    required this.rack,
-    required this.shelfNo,
-    required this.stock,
     required this.quantity,
     required this.direction,
     required this.type,
     required this.stockKeeperId,
     required this.timestamp,
+    this.itemCode = '',
+    this.itemName = '',
+    this.uomCode = '',
+    this.color = '',
+    this.length = 0.0,
+    this.sw = 0.0,
+    this.totalWeight = 0.0,
+    this.warehouse = '',
+    this.rack = '',
+    this.shelfNo = 0,
+    this.stock = 0,
     this.editedBy,
     this.editedAt,
     this.reversed = false,
@@ -70,48 +65,51 @@ class TransactionModel {
   });
 
   factory TransactionModel.fromMap(Map<String, dynamic> map, String id) {
+    final resolvedTxId = map['transactionId']?.toString() ?? id;
     return TransactionModel(
-      transactionId: map['transactionId'] ?? id,
-      // numericId was removed from Firebase → we take the number from the
-      // id itself: "tx_007" → 7 (see _numberFromId at the bottom).
+      transactionId: resolvedTxId,
       numericId:
-          (map['numericId'] as num?)?.toInt() ??
-          _numberFromId(map['transactionId']?.toString() ?? id),
-      // `as num?` → works for 2700 (int) and 2700.0 (double) alike
+          (map['numericId'] as num?)?.toInt() ?? _numberFromId(resolvedTxId),
       itemId: (map['itemId'] as num?)?.toInt(),
-      itemCode: map['itemCode'] ?? '',
-      itemName: map['itemName'] ?? '',
-      uomCode: map['uomCode'] ?? '',
-      color: map['color'] ?? '',
+      locationCode: map['locationCode']?.toString() ?? '',
+      quantity: (map['quantity'] as num?)?.toInt() ?? 0,
+      direction: map['direction']?.toString() ?? '',
+      type: map['type']?.toString() ?? '',
+      stockKeeperId:
+          (map['createdBy'] ?? map['stockKeeperId'] ?? map['workerId'] ?? '')
+              .toString(),
+      timestamp: _parseDateTime(map['timestamp']) ?? DateTime.now(),
+      itemCode: map['itemCode']?.toString() ?? '',
+      itemName: map['itemName']?.toString() ?? '',
+      uomCode: map['uomCode']?.toString() ?? '',
+      color: map['color']?.toString() ?? '',
       length: (map['length'] as num?)?.toDouble() ?? 0.0,
       sw: (map['sw'] as num?)?.toDouble() ?? 0.0,
       totalWeight: (map['totalWeight'] as num?)?.toDouble() ?? 0.0,
-      locationCode: map['locationCode'] ?? '',
-      warehouse: map['warehouse'] ?? '',
-      rack: map['rack'] ?? '',
+      warehouse: map['warehouse']?.toString() ?? '',
+      rack: map['rack']?.toString() ?? '',
       shelfNo: (map['shelfNo'] as num?)?.toInt() ?? 0,
       stock: (map['stock'] as num?)?.toInt() ?? 0,
-      quantity: (map['quantity'] as num?)?.toInt() ?? 0,
-      direction: map['direction'] ?? '',
-      type: map['type'] ?? '',
-      // ?? = "if the left is null, try the next one":
-      // new name first (createdBy), then the old names.
-      stockKeeperId:
-          map['createdBy'] ?? map['stockKeeperId'] ?? map['workerId'] ?? '',
-      timestamp: map['timestamp'] != null
-          ? DateTime.parse(map['timestamp'])
-          : DateTime.now(),
-      editedBy: map['editedBy'] as String?,
-      editedAt: DateTime.tryParse(map['editedAt']?.toString() ?? ''),
+      editedBy: map['editedBy']?.toString(),
+      editedAt: _parseDateTime(map['editedAt']),
       reversed: map['reversed'] == true,
-      reversalOf: map['reversalOf'] as String?,
-      reversedBy: map['reversedBy'] as String?,
-      reversedAt: DateTime.tryParse(map['reversedAt']?.toString() ?? ''),
-      reversalId: map['reversalId'] as String?,
+      reversalOf: map['reversalOf']?.toString(),
+      reversedBy: map['reversedBy']?.toString(),
+      reversedAt: _parseDateTime(map['reversedAt']),
+      reversalId: map['reversalId']?.toString(),
     );
   }
 
   TransactionModel copyWith({
+    String? transactionId,
+    int? numericId,
+    int? itemId,
+    String? locationCode,
+    int? quantity,
+    String? direction,
+    String? type,
+    String? stockKeeperId,
+    DateTime? timestamp,
     String? itemCode,
     String? itemName,
     String? uomCode,
@@ -119,26 +117,28 @@ class TransactionModel {
     double? length,
     double? sw,
     double? totalWeight,
-    String? locationCode,
     String? warehouse,
     String? rack,
     int? shelfNo,
     int? stock,
-    int? quantity,
-    String? direction,
-    String? type,
-    String? stockKeeperId,
     String? editedBy,
     DateTime? editedAt,
     bool? reversed,
+    String? reversalOf,
     String? reversedBy,
     DateTime? reversedAt,
     String? reversalId,
   }) {
     return TransactionModel(
-      transactionId: transactionId,
-      numericId: numericId,
-      itemId: itemId, // the item never changes (product is locked)
+      transactionId: transactionId ?? this.transactionId,
+      numericId: numericId ?? this.numericId,
+      itemId: itemId ?? this.itemId,
+      locationCode: locationCode ?? this.locationCode,
+      quantity: quantity ?? this.quantity,
+      direction: direction ?? this.direction,
+      type: type ?? this.type,
+      stockKeeperId: stockKeeperId ?? this.stockKeeperId,
+      timestamp: timestamp ?? this.timestamp,
       itemCode: itemCode ?? this.itemCode,
       itemName: itemName ?? this.itemName,
       uomCode: uomCode ?? this.uomCode,
@@ -146,20 +146,14 @@ class TransactionModel {
       length: length ?? this.length,
       sw: sw ?? this.sw,
       totalWeight: totalWeight ?? this.totalWeight,
-      locationCode: locationCode ?? this.locationCode,
       warehouse: warehouse ?? this.warehouse,
       rack: rack ?? this.rack,
       shelfNo: shelfNo ?? this.shelfNo,
       stock: stock ?? this.stock,
-      quantity: quantity ?? this.quantity,
-      direction: direction ?? this.direction,
-      type: type ?? this.type,
-      stockKeeperId: stockKeeperId ?? this.stockKeeperId,
-      timestamp: timestamp,
       editedBy: editedBy ?? this.editedBy,
       editedAt: editedAt ?? this.editedAt,
       reversed: reversed ?? this.reversed,
-      reversalOf: reversalOf,
+      reversalOf: reversalOf ?? this.reversalOf,
       reversedBy: reversedBy ?? this.reversedBy,
       reversedAt: reversedAt ?? this.reversedAt,
       reversalId: reversalId ?? this.reversalId,
@@ -170,29 +164,24 @@ class TransactionModel {
   /// IN adds the quantity (+), OUT removes it (−).
   int get stockEffect => direction == 'IN' ? quantity : -quantity;
 
-  /// true if THIS row is a reversal.
+  /// True if THIS row is a reversal.
   bool get isReversal => reversalOf != null || type == 'reversal';
 
-  /// The opposite direction: IN ↔ OUT
+  /// The opposite direction: IN <-> OUT.
   String get oppositeDirection => direction == 'IN' ? 'OUT' : 'IN';
 
-  /// The transaction as a Map, in the NEW Firebase structure
-  /// (only what a transaction owns — the item's details live in `items`).
-  /// Used when we CREATE a transaction (e.g. a reversal).
+  /// Serializes only the fields written to `transactions/<id>` in Firebase.
   Map<String, dynamic> toJson() {
     return {
-      'transactionId': transactionId,
-      // Collection `if`: the item is saved by its id. Only if we somehow
-      // have no id (very old data) we fall back to code + length.
+      if (transactionId != null) 'transactionId': transactionId,
       if (itemId != null) 'itemId': itemId,
-      if (itemId == null) 'itemCode': itemCode,
-      if (itemId == null) 'length': length,
+      if (itemId == null && itemCode.isNotEmpty) 'itemCode': itemCode,
+      if (itemId == null && length > 0) 'length': length,
       'locationCode': locationCode,
       'quantity': quantity,
       'direction': direction,
       'type': type,
       'createdBy': stockKeeperId,
-      // toUtc() → saved like Joud's data: "2026-11-01T11:17:00.000Z"
       'timestamp': timestamp.toUtc().toIso8601String(),
       if (editedAt != null) 'editedAt': editedAt!.toUtc().toIso8601String(),
       if (reversed) 'reversed': true,
@@ -205,8 +194,13 @@ class TransactionModel {
   }
 }
 
-/// "tx_007" → 7, "tx_051" → 51. Anything else (e.g. "-Oa8x…") → 0.
-/// RegExp: (\d+)$ = the digits at the END of the text.
+DateTime? _parseDateTime(dynamic value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  return DateTime.tryParse(value.toString());
+}
+
+/// "tx_001" -> 1, "tx_051" -> 51. Anything else -> 0.
 int _numberFromId(String id) {
   final match = RegExp(r'(\d+)$').firstMatch(id);
   return match == null ? 0 : int.parse(match.group(1)!);

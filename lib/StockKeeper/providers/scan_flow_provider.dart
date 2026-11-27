@@ -46,10 +46,9 @@ enum LocationStatus { found, notFound, offline, failed }
 /// pages simple and makes this class easy to test later.
 class ScanFlowProvider extends ChangeNotifier {
   ScanFlowProvider({
-    required ItemsRepository itemsRepo,
+    required this._itemsRepo,
     required LocationsRepository locationsRepo,
-  }) : _itemsRepo = itemsRepo,
-       _locationsRepo = locationsRepo;
+  }) : _locationsRepo = locationsRepo;
 
   final ItemsRepository _itemsRepo;
   final LocationsRepository _locationsRepo;

@@ -1,9 +1,22 @@
-import 'package:aral_project/StockKeeper/components/step_progress_bar.dart';
+import 'dart:async';
+
+import 'package:aral_project/Admin/Models/item_row.dart';
+import 'package:aral_project/Admin/Models/transaction_types.dart';
+import 'package:aral_project/Admin/providers/transactions_repository.dart';
+import 'package:aral_project/SharedComponents/app_snackbar.dart';
+import 'package:aral_project/SharedComponents/direction_segmented_button.dart';
+import 'package:aral_project/SharedComponents/offline_banner.dart';
+import 'package:aral_project/SharedComponents/quantity_validator.dart';
+import 'package:aral_project/SharedComponents/transaction_type_dropdown.dart';
+import 'package:aral_project/StockKeeper/PendingSyncPage/pending_sync_page.dart';
 import 'package:aral_project/StockKeeper/Step3Page/components/quick_add_button.dart';
 import 'package:aral_project/StockKeeper/Step3Page/components/summary_info_cards.dart';
+import 'package:aral_project/StockKeeper/components/step_progress_bar.dart';
+import 'package:aral_project/StockKeeper/models/pending_sync_model.dart';
 import 'package:aral_project/StockKeeper/models/scan_labels.dart';
 import 'package:aral_project/StockKeeper/providers/scan_flow_provider.dart';
 import 'package:aral_project/Theme/theme.dart';
+import 'package:aral_project/connectivity/connectivity_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -19,41 +32,141 @@ class _QuantityPageState extends State<QuantityPage> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   String _selectedOperation = 'IN';
+  late String _selectedType = defaultTypeFor(_selectedOperation);
   final TextEditingController _quantityController = TextEditingController(
     text: '1',
   );
 
+  bool _isSubmitting = false;
+  late bool _online;
+  StreamSubscription<bool>? _connectionSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _online = ConnectivityService.instance.isOnline.value;
+    unawaited(ConnectivityService.instance.checkInitialConnection());
+    _connectionSub = ConnectivityService.instance.onConnectivityChanged.listen((
+      isOnline,
+    ) {
+      if (!mounted) return;
+      setState(() => _online = isOnline);
+      context.read<PendingSyncController>().setOnline(isOnline);
+    });
+  }
+
   @override
   void dispose() {
     _quantityController.dispose();
+    unawaited(_connectionSub?.cancel());
     super.dispose();
   }
 
-  void _updateQuantity(int delta) {
+  void _updateQuantity(int delta, {int? maxStock}) {
     final int current = int.tryParse(_quantityController.text) ?? 0;
-    final int updated = current + delta;
-    if (updated >= 1) {
-      setState(() {
-        _quantityController.text = updated.toString();
-      });
+    int updated = current + delta;
+    if (updated < 1) updated = 1;
+    if (_selectedOperation == 'OUT' &&
+        _online &&
+        maxStock != null &&
+        updated > maxStock) {
+      updated = maxStock > 0 ? maxStock : 1;
+    }
+    setState(() {
+      _quantityController.text = updated.toString();
+    });
+  }
+
+  Future<void> _submit(ItemRow? item, String? location) async {
+    if (_isSubmitting) return;
+    if (item == null || location == null) {
+      showAppSnackBar(
+        context,
+        'Missing product or location. Scan again.',
+        isError: true,
+      );
+      return;
+    }
+
+    if (!_formKey.currentState!.validate()) return;
+
+    final int qty = int.parse(_quantityController.text.trim());
+
+    if (_selectedOperation == 'OUT' && _online && qty > item.quantity) {
+      showAppSnackBar(
+        context,
+        'Not enough stock (${item.quantity} pcs available).',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      if (_online) {
+        await context
+            .read<TransactionData>()
+            .createTransaction(
+              item: item,
+              locationCode: location,
+              direction: _selectedOperation,
+              quantity: qty,
+              stockKeeperId: 'StockKeeper',
+              type: _selectedType,
+            )
+            .timeout(const Duration(seconds: 10));
+
+        if (!mounted) return;
+        showAppSnackBar(context, 'Transaction saved');
+      } else {
+        context.read<PendingSyncController>().add(
+          PendingTransaction(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            itemName: '${item.code} (${lengthText(item.length)})',
+            direction: _selectedOperation,
+            quantity: qty,
+            location: location,
+            savedAt: DateTime.now(),
+          ),
+        );
+        if (!mounted) return;
+        showSavedOfflineSnack(context);
+      }
+
+      context.read<ScanFlowProvider>().reset();
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } on InsufficientStockException catch (e) {
+      showAppSnackBar(context, e.message, isError: true);
+    } on TimeoutException {
+      showAppSnackBar(
+        context,
+        'Connection timed out. Check your internet and try again.',
+        isError: true,
+      );
+    } catch (_) {
+      showAppSnackBar(
+        context,
+        'Could not save transaction. Try again.',
+        isError: true,
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isInOperation = _selectedOperation == 'IN';
-
-    // NEW (scanner hand-off): the product + location scanned in Steps 1–2.
-    // watch → this page rebuilds if the session changes.
     final session = context.watch<ScanFlowProvider>().session;
-    final item = session.item; // null only if this page is opened directly
+    final item = session.item;
     final location = session.locationCode;
+    final int? availableStock = item?.quantity;
 
     return Form(
       key: _formKey,
+      autovalidateMode: AutovalidateMode.onUserInteraction,
       child: Column(
         children: [
-          // Fills all available vertical space above the bottom bar
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -70,10 +183,14 @@ class _QuantityPageState extends State<QuantityPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 1. Top Progress Row
                           const StepProgressBar(currentStep: 3),
-                          SizedBox(height: 16),
-                          // 2. Product Summary Card
+                          const SizedBox(height: 16),
+
+                          if (!_online)
+                            const OfflineBanner(
+                              message: 'Transaction will be saved on this phone and synced when back online.',
+                            ),
+
                           SummaryInfoCard(
                             icon: Icons.qr_code_2_rounded,
                             categoryLabel: 'PRODUCT',
@@ -82,7 +199,6 @@ class _QuantityPageState extends State<QuantityPage> {
                           ),
                           const SizedBox(height: 12),
 
-                          // 3. Location Summary Card
                           SummaryInfoCard(
                             icon: Icons.location_on_outlined,
                             categoryLabel: 'LOCATION',
@@ -92,7 +208,7 @@ class _QuantityPageState extends State<QuantityPage> {
                             subtitle: location ?? '',
                           ),
                           const SizedBox(height: 16),
-                          // 4. Operation Section
+
                           const Text(
                             'Operation',
                             style: TextStyle(
@@ -102,84 +218,32 @@ class _QuantityPageState extends State<QuantityPage> {
                             ),
                           ),
                           const SizedBox(height: 10),
-                          SizedBox(
-                            width: double.infinity,
-                            child: SegmentedButton<String>(
-                              style: ButtonStyle(
-                                minimumSize: WidgetStateProperty.all(
-                                  const Size.fromHeight(52),
-                                ),
-                                shape: WidgetStateProperty.all(
-                                  const StadiumBorder(),
-                                ),
-                                backgroundColor:
-                                    WidgetStateProperty.resolveWith((states) {
-                                      if (states.contains(
-                                        WidgetState.selected,
-                                      )) {
-                                        return isInOperation
-                                            ? AppTheme.successColor.withValues(
-                                                alpha: 0.16,
-                                              )
-                                            : AppTheme.errorColor.withValues(
-                                                alpha: 0.14,
-                                              );
-                                      }
-                                      return AppTheme.surfaceColor;
-                                    }),
-                                foregroundColor:
-                                    WidgetStateProperty.resolveWith((states) {
-                                      if (states.contains(
-                                        WidgetState.selected,
-                                      )) {
-                                        return isInOperation
-                                            ? AppTheme.successColor
-                                            : AppTheme.errorColor;
-                                      }
-                                      return AppTheme.textColorPrimary;
-                                    }),
-                                side: WidgetStateProperty.all(
-                                  const BorderSide(color: AppTheme.borderColor),
-                                ),
-                              ),
-                              segments: const [
-                                ButtonSegment(
-                                  value: 'IN',
-                                  icon: Icon(
-                                    Icons.arrow_downward_rounded,
-                                    size: 18,
-                                  ),
-                                  label: Text(
-                                    'IN · Store',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                ButtonSegment(
-                                  value: 'OUT',
-                                  icon: Icon(
-                                    Icons.arrow_upward_rounded,
-                                    size: 18,
-                                  ),
-                                  label: Text(
-                                    'OUT · Withdraw',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                              selected: {_selectedOperation},
-                              onSelectionChanged: (Set<String> newSelection) {
-                                setState(() {
-                                  _selectedOperation = newSelection.first;
-                                });
-                              },
-                            ),
+                          DirectionSegmentedButton(
+                            value: _selectedOperation,
+                            onChanged: _isSubmitting
+                                ? null
+                                : (val) {
+                                    setState(() {
+                                      _selectedOperation = val;
+                                      _selectedType = defaultTypeFor(val);
+                                    });
+                                    _formKey.currentState?.validate();
+                                  },
                           ),
-                          SizedBox(height: 16),
-                          // 5. Quantity Section
+                          const SizedBox(height: 16),
+
+                          TransactionTypeDropdown(
+                            direction: _selectedOperation,
+                            value: _selectedType,
+                            enabled: !_isSubmitting,
+                            onChanged: (code) {
+                              if (code != null) {
+                                setState(() => _selectedType = code);
+                              }
+                            },
+                          ),
+                          const SizedBox(height: 16),
+
                           const Text(
                             'Quantity',
                             style: TextStyle(
@@ -190,7 +254,6 @@ class _QuantityPageState extends State<QuantityPage> {
                           ),
                           const SizedBox(height: 12),
 
-                          // Stepper Row (- [ 20 pieces ] +)
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -203,7 +266,12 @@ class _QuantityPageState extends State<QuantityPage> {
                                   color: AppTheme.surfaceColor,
                                 ),
                                 child: IconButton(
-                                  onPressed: () => _updateQuantity(-1),
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : () => _updateQuantity(
+                                          -1,
+                                          maxStock: availableStock,
+                                        ),
                                   icon: const Icon(Icons.remove),
                                   color: AppTheme.textColorPrimary,
                                   iconSize: 22,
@@ -217,6 +285,7 @@ class _QuantityPageState extends State<QuantityPage> {
                               Expanded(
                                 child: TextFormField(
                                   controller: _quantityController,
+                                  readOnly: _isSubmitting,
                                   textAlign: TextAlign.center,
                                   keyboardType: TextInputType.number,
                                   inputFormatters: [
@@ -255,16 +324,13 @@ class _QuantityPageState extends State<QuantityPage> {
                                       ),
                                     ),
                                   ),
-                                  validator: (value) {
-                                    if (value == null || value.isEmpty) {
-                                      return 'Enter quantity';
-                                    }
-                                    final intValue = int.tryParse(value);
-                                    if (intValue == null || intValue <= 0) {
-                                      return 'Must be > 0';
-                                    }
-                                    return null;
-                                  },
+                                  validator: (value) =>
+                                      validateTransactionQuantity(
+                                        value,
+                                        direction: _selectedOperation,
+                                        availableStock: availableStock,
+                                        enforceStockLimit: _online,
+                                      ),
                                 ),
                               ),
                               const SizedBox(width: 14),
@@ -274,7 +340,12 @@ class _QuantityPageState extends State<QuantityPage> {
                                   color: AppTheme.primaryColor,
                                 ),
                                 child: IconButton(
-                                  onPressed: () => _updateQuantity(1),
+                                  onPressed: _isSubmitting
+                                      ? null
+                                      : () => _updateQuantity(
+                                          1,
+                                          maxStock: availableStock,
+                                        ),
                                   icon: const Icon(Icons.add),
                                   color: Colors.white,
                                   iconSize: 22,
@@ -288,7 +359,6 @@ class _QuantityPageState extends State<QuantityPage> {
                           ),
                           const SizedBox(height: 16),
 
-                          // 6. Quick Add Row
                           Wrap(
                             crossAxisAlignment: WrapCrossAlignment.center,
                             spacing: 8,
@@ -301,30 +371,18 @@ class _QuantityPageState extends State<QuantityPage> {
                                   color: AppTheme.textColorSecondary,
                                 ),
                               ),
-                              QuickAddButton(
-                                label: '+10',
-                                onTap: () => _updateQuantity(10),
-                              ),
-                              QuickAddButton(
-                                label: '+50',
-                                onTap: () => _updateQuantity(50),
-                              ),
-                              QuickAddButton(
-                                label: '+100',
-                                onTap: () => _updateQuantity(100),
-                              ),
-                              QuickAddButton(
-                                label: '+150',
-                                onTap: () => _updateQuantity(150),
-                              ),
+                              for (final step in [10, 50, 100, 150])
+                                QuickAddButton(
+                                  label: '+$step',
+                                  onTap: () => _updateQuantity(
+                                    step,
+                                    maxStock: availableStock,
+                                  ),
+                                ),
                             ],
                           ),
                           const SizedBox(height: 14),
 
-                          // 7. Available Stock Row
-                          // Stock is stored per ITEM (code + length) in
-                          // `items`, not per location → "In stock", not
-                          // "at this location".
                           Row(
                             children: [
                               const Icon(
@@ -335,7 +393,7 @@ class _QuantityPageState extends State<QuantityPage> {
                               const SizedBox(width: 8),
                               Text(
                                 'In stock: ${item?.quantity ?? 0} pcs',
-                                style: TextStyle(
+                                style: const TextStyle(
                                   fontSize: 13,
                                   color: AppTheme.textColorSecondary,
                                   fontWeight: FontWeight.w500,
@@ -352,7 +410,6 @@ class _QuantityPageState extends State<QuantityPage> {
             ),
           ),
 
-          // 8. Pinned Bottom Submit Bar
           Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             decoration: const BoxDecoration(
@@ -372,15 +429,25 @@ class _QuantityPageState extends State<QuantityPage> {
                     foregroundColor: Colors.white,
                     shape: const StadiumBorder(),
                   ),
-                  onPressed: () {
-                    if (_formKey.currentState!.validate()) {
-                      // Submit transaction
-                    }
-                  },
-                  icon: const Icon(Icons.check_rounded, size: 20),
-                  label: const Text(
-                    'Submit transaction',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  onPressed: _isSubmitting
+                      ? null
+                      : () => _submit(item, location),
+                  icon: _isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_rounded, size: 20),
+                  label: Text(
+                    _isSubmitting ? 'Submitting…' : 'Submit transaction',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ),

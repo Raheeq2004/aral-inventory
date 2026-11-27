@@ -28,12 +28,10 @@ class TransactionData extends ChangeNotifier {
   double? _selectedLength;
   String? _selectedSort;
 
-  // Delegated helpers so existing UI callers (like TransactionDetailPage) keep working
   Future<ItemRow?> itemFor(TransactionModel tx) => _itemsRepo.itemFor(tx);
   Future<bool> locationExists(String locationCode) =>
       _locationsRepo.locationExists(locationCode);
 
-  // Getter that returns the filtered and sorted list of transactions
   List<TransactionModel> get transactions {
     var list = List<TransactionModel>.from(transactionDataList);
 
@@ -231,6 +229,24 @@ class TransactionData extends ChangeNotifier {
     }
   }
 
+  void _addItemStockUpdates({
+    required Map<String, Object?> changes,
+    required ItemRow itemRow,
+    required int delta,
+  }) {
+    if (delta == 0) return;
+    changes['items/${itemRow.key}/${ItemRow.stockField}'] =
+        ServerValue.increment(delta);
+
+    // If the item row in Firebase also stores a "Total Weight" field, keep it in sync.
+    if (itemRow.data.containsKey('Total Weight')) {
+      final weightDelta = delta * itemRow.length * itemRow.sw;
+      changes['items/${itemRow.key}/Total Weight'] = ServerValue.increment(
+        weightDelta,
+      );
+    }
+  }
+
   Future<void> updateTransaction({
     required TransactionModel original,
     required TransactionModel updated,
@@ -265,8 +281,7 @@ class TransactionData extends ChangeNotifier {
           available: newRow.quantity,
           required: -delta,
         );
-        changes['items/${newRow.key}/${ItemRow.stockField}'] =
-            ServerValue.increment(delta);
+        _addItemStockUpdates(changes: changes, itemRow: newRow, delta: delta);
         syncedNewStock = resultingQuantity;
       }
     } else {
@@ -286,10 +301,16 @@ class TransactionData extends ChangeNotifier {
         required: -updated.stockEffect,
       );
 
-      changes['items/${oldRow.key}/${ItemRow.stockField}'] =
-          ServerValue.increment(-original.stockEffect);
-      changes['items/${newRow.key}/${ItemRow.stockField}'] =
-          ServerValue.increment(updated.stockEffect);
+      _addItemStockUpdates(
+        changes: changes,
+        itemRow: oldRow,
+        delta: -original.stockEffect,
+      );
+      _addItemStockUpdates(
+        changes: changes,
+        itemRow: newRow,
+        delta: updated.stockEffect,
+      );
       syncedOldStock = oldResult;
       syncedNewStock = newResult;
     }
@@ -372,10 +393,12 @@ class TransactionData extends ChangeNotifier {
       'transactions/$id/reversedBy': reversedBy,
       'transactions/$id/reversedAt': now.toUtc().toIso8601String(),
       'transactions/$id/reversalId': newId,
-      'items/${row.key}/${ItemRow.stockField}': ServerValue.increment(
-        reversal.stockEffect,
-      ),
     };
+    _addItemStockUpdates(
+      changes: changes,
+      itemRow: row,
+      delta: reversal.stockEffect,
+    );
 
     await root.update(changes);
 
@@ -413,5 +436,95 @@ class TransactionData extends ChangeNotifier {
       if (!snap.exists) return id;
       next++;
     }
+  }
+
+  Future<void> _ensureTransactionsNodeExists(DatabaseReference root) async {
+    final txRoot = root.child('transactions');
+    final snap = await txRoot.get();
+    if (!snap.exists || snap.value == null) {
+      await txRoot.set(<String, dynamic>{});
+    }
+  }
+
+  Future<String> createTransaction({
+    required ItemRow item,
+    required String locationCode,
+    required String direction,
+    required int quantity,
+    required String stockKeeperId,
+    String? type,
+  }) async {
+    final normalizedDir = direction.toUpperCase() == 'OUT' ? 'OUT' : 'IN';
+    final stockDelta = normalizedDir == 'IN' ? quantity : -quantity;
+    final resolvedType = type ?? defaultTypeFor(normalizedDir);
+    final normalizedLocation = locationCode.trim().toUpperCase();
+
+    final row = await _itemsRepo.requireItem(
+      TransactionModel(
+        transactionId: '',
+        numericId: 0,
+        itemId: item.id,
+        locationCode: normalizedLocation,
+        quantity: quantity,
+        direction: normalizedDir,
+        type: resolvedType,
+        stockKeeperId: stockKeeperId,
+        timestamp: DateTime.now(),
+        itemCode: item.code,
+        itemName: item.code,
+        uomCode: item.uomCode,
+        color: item.color,
+        length: item.length,
+        sw: item.sw,
+        totalWeight: item.totalWeightKg,
+        stock: item.quantity,
+      ),
+    );
+
+    final resultingQuantity = row.quantity + stockDelta;
+    _ensureSufficientStock(
+      resultingQuantity: resultingQuantity,
+      itemCode: item.code,
+      available: row.quantity,
+      required: quantity,
+    );
+
+    final root = FirebaseDatabase.instance.ref();
+    await _ensureTransactionsNodeExists(root);
+
+    final now = DateTime.now();
+    final newId = await _nextTransactionId();
+    final resolvedItemId = item.id ?? (row.data['id'] as num?)?.toInt();
+
+    final tx = TransactionModel(
+      transactionId: newId,
+      numericId: int.parse(newId.substring(3)),
+      itemId: resolvedItemId,
+      locationCode: normalizedLocation,
+      quantity: quantity,
+      direction: normalizedDir,
+      type: resolvedType,
+      stockKeeperId: stockKeeperId,
+      timestamp: now,
+      itemCode: item.code,
+      itemName: item.code,
+      uomCode: item.uomCode,
+      color: item.color,
+      length: item.length,
+      sw: item.sw,
+      totalWeight: item.totalWeightKg,
+      stock: resultingQuantity,
+    );
+
+    final Map<String, Object?> updates = {'transactions/$newId': tx.toJson()};
+    _addItemStockUpdates(changes: updates, itemRow: row, delta: stockDelta);
+
+    await root.update(updates);
+
+    transactionDataList.insert(0, tx);
+    _syncItemStockInList(itemId: resolvedItemId, newStock: resultingQuantity);
+    notifyListeners();
+
+    return newId;
   }
 }
