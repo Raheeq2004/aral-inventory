@@ -82,7 +82,13 @@ class _ManualCodeSheetState extends State<_ManualCodeSheet> {
     // pushes the sheet up so the keyboard never covers the field.
     final keyboard = MediaQuery.of(context).viewInsets.bottom;
 
-    return Padding(
+    // SafeArea(top: false) = also keep away from the phone's OWN bottom
+    // bar (the ||| ○ < buttons / gesture bar). Without it, Cancel and
+    // Confirm were drawn UNDER that bar → taps went to the phone, not to us.
+    // top: false → the sheet sits at the bottom, the top needs no space.
+    return SafeArea(
+      top: false,
+      child: Padding(
       padding: EdgeInsets.fromLTRB(20, 0, 20, 16 + keyboard),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -132,6 +138,7 @@ class _ManualCodeSheetState extends State<_ManualCodeSheet> {
             ],
           ),
         ],
+      ),
       ),
     );
   }
